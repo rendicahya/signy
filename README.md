@@ -2,6 +2,8 @@
 
 Sign PDF documents with protected handwritten signatures, entirely in your browser.
 
+**Live app:** https://rendicahya.github.io/signy/
+
 No backend, no uploads, no accounts — everything runs client-side and is designed to work fully offline once loaded. See `CLAUDE.md` for the full product spec, and `FEATURES.md` for what's actually implemented versus still on the roadmap.
 
 ## Stack
@@ -22,7 +24,7 @@ npm run build
 npm run deploy
 ```
 
-`vite.config.ts` sets `base: '/signy/'` in production builds — update `REPO_NAME` there if the repository is renamed.
+`vite.config.ts` sets `base: '/signy/'` in production builds — update `REPO_NAME` there if the repository is renamed. Deploys to https://rendicahya.github.io/signy/ via the `gh-pages` branch.
 
 ## Project status
 
