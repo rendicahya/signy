@@ -45,11 +45,12 @@
 
   onMount(loadDocument);
 
-  // Re-render the current page whenever the zoom level (or the document) changes.
+  // Re-render the current page whenever the zoom level, rotation, or the document changes.
   $effect(() => {
     const scale = $editorStore.renderScale;
+    const rotation = $editorStore.rotation;
     if (!doc || !canvasEl) return;
-    renderPageToCanvas(doc, 1, canvasEl, scale).catch((e) => {
+    renderPageToCanvas(doc, 1, canvasEl, scale, rotation).catch((e) => {
       error = e instanceof Error ? e.message : 'Failed to render PDF';
     });
   });

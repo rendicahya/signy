@@ -24,6 +24,7 @@
         signatureBlob: sig.signature.blob,
         placement: editor.placedSignature,
         renderScale: editor.renderScale,
+        rotation: editor.rotation,
         watermark: { customText: $watermarkText, includeTimestamp: $includeTimestamp, position: $watermarkPosition },
       });
       downloadSignedPdf(bytes, editor.pdfFile.name);

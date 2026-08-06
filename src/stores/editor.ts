@@ -14,6 +14,8 @@ export interface EditorState {
   placedSignature: PlacedSignature | null;
   /** pdf.js render scale for the visible canvas; also used to map placement back to PDF points on export. */
   renderScale: number;
+  /** Additional rotation (0/90/180/270) the user applied on top of the page's own rotation. */
+  rotation: number;
 }
 
 export const DEFAULT_RENDER_SCALE = 1.5;
@@ -46,10 +48,11 @@ function createEditorStore() {
     pageNumber: 1,
     placedSignature: null,
     renderScale: DEFAULT_RENDER_SCALE,
+    rotation: 0,
   });
 
   function loadPdf(file: File) {
-    set({ pdfFile: file, pageNumber: 1, placedSignature: null, renderScale: DEFAULT_RENDER_SCALE });
+    set({ pdfFile: file, pageNumber: 1, placedSignature: null, renderScale: DEFAULT_RENDER_SCALE, rotation: 0 });
   }
 
   function placeSignature(placement: PlacedSignature) {
@@ -79,8 +82,27 @@ function createEditorStore() {
     update((state) => rescale(state, DEFAULT_RENDER_SCALE));
   }
 
+  function rotateBy(delta: number) {
+    update((state) => ({
+      ...state,
+      rotation: ((state.rotation + delta) % 360 + 360) % 360,
+      // The canvas dimensions change with rotation, so a pixel-based placement
+      // from before the rotation no longer means anything — clear it. The
+      // "Use last position" flow lets the user quickly re-place it.
+      placedSignature: null,
+    }));
+  }
+
+  function rotateLeft() {
+    rotateBy(-90);
+  }
+
+  function rotateRight() {
+    rotateBy(90);
+  }
+
   function reset() {
-    set({ pdfFile: null, pageNumber: 1, placedSignature: null, renderScale: DEFAULT_RENDER_SCALE });
+    set({ pdfFile: null, pageNumber: 1, placedSignature: null, renderScale: DEFAULT_RENDER_SCALE, rotation: 0 });
   }
 
   return {
@@ -92,6 +114,8 @@ function createEditorStore() {
     zoomIn,
     zoomOut,
     resetZoom,
+    rotateLeft,
+    rotateRight,
     reset,
   };
 }

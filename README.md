@@ -53,6 +53,7 @@ _Last updated: 2026-08-06._
 - Zoom in / out / reset controls in the toolbar; the placed signature rescales to stay in the same spot on the page as you zoom (`stores/editor.ts`).
 - Toolbar stays fixed (sticky) at the top while scrolling.
 - **Use last position**: the signature's placement (position and size) is remembered as a ratio of the page dimensions, so it carries over to the next document. A "Use last position" button appears over the page when a saved placement exists and nothing has been placed yet (`stores/placement.ts`).
+- **Rotate the PDF page** 90° at a time from the toolbar — useful for sideways-scanned documents. The rotation is applied permanently to the exported file (via pdf-lib's `setRotation`), and the signature position is mapped back to the correct PDF coordinates using pdf.js's viewport conversion regardless of rotation (`lib/pdf/loader.ts`, `lib/pdf/export.ts`). Rotating clears any already-placed signature, since the canvas dimensions change; use "Use last position" to quickly re-place it.
 - Dark mode toggle (`components/ThemeToggle.svelte`, `stores/theme.ts`): defaults to the OS's `prefers-color-scheme`, can be switched manually, and the choice is persisted in `localStorage`.
 
 **Visible watermark**
@@ -76,7 +77,7 @@ _Last updated: 2026-08-06._
 
 ### Not yet implemented
 
-- **Rotate** the placed signature.
+- **Rotate the placed signature itself** (independent of the page rotation above — e.g. angling the signature image within its box).
 - **Snap to page edges** when dragging.
 - **Watermark opacity control** — currently hardcoded at 0.25 in `lib/watermark/visible.ts`.
 - **Invisible watermark** — DWT/DCT-based payload embedding. No code exists for this yet.

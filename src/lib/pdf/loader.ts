@@ -15,14 +15,26 @@ export async function loadPdf(file: File): Promise<PdfDocument> {
   return loadingTask.promise;
 }
 
+/**
+ * Combines the page's own intrinsic rotation with any additional rotation
+ * the user chose, so a "rotate" button always turns the page relative to
+ * what's currently on screen rather than fighting the source PDF's own
+ * /Rotate value.
+ */
+export function getTotalRotation(page: { rotate: number }, extraRotation = 0): number {
+  return ((page.rotate + extraRotation) % 360 + 360) % 360;
+}
+
 export async function renderPageToCanvas(
   doc: PdfDocument,
   pageNumber: number,
   canvas: HTMLCanvasElement,
   scale = 1.5,
+  extraRotation = 0,
 ): Promise<void> {
   const page = await doc.getPage(pageNumber);
-  const viewport = page.getViewport({ scale });
+  const rotation = getTotalRotation(page, extraRotation);
+  const viewport = page.getViewport({ scale, rotation });
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas 2D context unavailable');
 
