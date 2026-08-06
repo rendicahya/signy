@@ -23,6 +23,7 @@ _Last updated: 2026-08-06._
 - Resize a placed signature via a corner handle, with aspect ratio always locked to the original image (`lib/signature/layout.ts`).
 - Zoom in / out / reset controls in the toolbar; the placed signature rescales to stay in the same spot on the page as you zoom (`stores/editor.ts`).
 - Toolbar stays fixed (sticky) at the top while scrolling.
+- Dark mode toggle (`components/ThemeToggle.svelte`, `stores/theme.ts`): defaults to the OS's `prefers-color-scheme`, can be switched manually, and the choice is persisted in `localStorage`.
 
 ### Visible watermark
 
@@ -42,10 +43,6 @@ _Last updated: 2026-08-06._
 
 - Vite config sets the correct `base` path for GitHub Pages (`vite.config.ts`).
 - `npm run deploy` script using `gh-pages`.
-
-## Known bugs
-
-- **Dark mode doesn't actually activate.** Tailwind is configured with `darkMode: 'class'` and components have `dark:` variants throughout, but nothing ever adds the `dark` class to `<html>`. No `prefers-color-scheme` detection or manual toggle exists yet, so the app is always in light mode regardless of the user's system setting.
 
 ## Not yet implemented
 

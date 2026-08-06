@@ -4,8 +4,10 @@
   import PDFViewer from './components/PDFViewer.svelte';
   import SignaturePanel from './components/SignaturePanel.svelte';
   import Toolbar from './components/Toolbar.svelte';
+  import ThemeToggle from './components/ThemeToggle.svelte';
   import { editorStore } from './stores/editor';
   import { signatureStore } from './stores/signature';
+  import { theme } from './stores/theme';
 
   const editor = $derived($editorStore);
   const signature = $derived($signatureStore);
@@ -17,10 +19,18 @@
   function onPdfFile(file: File) {
     editorStore.loadPdf(file);
   }
+
+  // Reflect the chosen theme on <html> so Tailwind's `dark:` variants apply.
+  $effect(() => {
+    document.documentElement.classList.toggle('dark', $theme === 'dark');
+  });
 </script>
 
 <main class="min-h-screen">
   {#if !readyForEditor}
+    <div class="fixed right-4 top-4 z-10">
+      <ThemeToggle />
+    </div>
     <div class="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center gap-8 px-6">
       <div class="text-center">
         <h1 class="text-3xl font-semibold">Signy</h1>

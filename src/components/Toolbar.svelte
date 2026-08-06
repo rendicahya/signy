@@ -1,6 +1,7 @@
 <script lang="ts">
   import { editorStore, DEFAULT_RENDER_SCALE } from '../stores/editor';
   import ExportButton from './ExportButton.svelte';
+  import ThemeToggle from './ThemeToggle.svelte';
 
   const zoomPercent = $derived(Math.round(($editorStore.renderScale / DEFAULT_RENDER_SCALE) * 100));
 
@@ -44,6 +45,7 @@
   </div>
 
   <div class="flex items-center gap-3">
+    <ThemeToggle />
     <button
       type="button"
       class="text-sm text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-100"

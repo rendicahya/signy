@@ -28,7 +28,7 @@ npm run deploy
 
 The core flow works end to end: upload PDF/signature, save the signature locally, drag/resize/watermark it on the page, and export a signed PDF. Watermark position, text, and timestamp preferences are configurable and persisted.
 
-Notably missing right now: multi-page PDF support (only the first page is signed), signature rotation, watermark opacity control, and dark mode (the styles exist but nothing toggles them yet). Invisible watermarking (v0.3) and the verification page (v0.4) haven't been started.
+Notably missing right now: multi-page PDF support (only the first page is signed), signature rotation, and watermark opacity control. Invisible watermarking (v0.3) and the verification page (v0.4) haven't been started.
 
 See `FEATURES.md` for the full, itemized breakdown of what's implemented, known bugs, and what's left.
 
