@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { loadPdf, renderPageToCanvas, type PdfDocument } from '../lib/pdf/loader';
-  import { editorStore } from '../stores/editor';
+  import { editorStore, type PlacedSignature } from '../stores/editor';
   import { signatureStore } from '../stores/signature';
   import { watermarkText, includeTimestamp, watermarkPosition, type WatermarkPosition } from '../stores/watermark';
+  import { lastPlacement, type PlacementRatio } from '../stores/placement';
   import { fitWithinBox } from '../lib/signature/layout';
   import { buildWatermarkLines } from '../lib/watermark/visible';
 
@@ -57,6 +58,36 @@
     return Math.min(Math.max(value, min), max);
   }
 
+  // Remember where the signature was placed (as a ratio of the page size) so
+  // it can be reused on the next document.
+  function rememberPlacement(placement: PlacedSignature) {
+    const rect = canvasEl.getBoundingClientRect();
+    lastPlacement.set({
+      xRatio: placement.x / rect.width,
+      yRatio: placement.y / rect.height,
+      widthRatio: placement.width / rect.width,
+      heightRatio: placement.height / rect.height,
+    });
+  }
+
+  function placementFromRatio(ratio: PlacementRatio): PlacedSignature {
+    const rect = canvasEl.getBoundingClientRect();
+    const width = ratio.widthRatio * rect.width;
+    const height = ratio.heightRatio * rect.height;
+    return {
+      width,
+      height,
+      x: clamp(ratio.xRatio * rect.width, 0, rect.width - width),
+      y: clamp(ratio.yRatio * rect.height, 0, rect.height - height),
+    };
+  }
+
+  function useLastPosition() {
+    const ratio = $lastPlacement;
+    if (!ratio) return;
+    editorStore.placeSignature(placementFromRatio(ratio));
+  }
+
   function onDragOver(e: DragEvent) {
     e.preventDefault();
     isDragOver = true;
@@ -73,7 +104,9 @@
     const x = clamp(e.clientX - rect.left - width / 2, 0, rect.width - width);
     const y = clamp(e.clientY - rect.top - height / 2, 0, rect.height - height);
 
-    editorStore.placeSignature({ x, y, width, height });
+    const placement = { x, y, width, height };
+    editorStore.placeSignature(placement);
+    rememberPlacement(placement);
   }
 
   // Let the placed signature be moved after it's dropped.
@@ -101,6 +134,8 @@
 
   function onOverlayPointerUp() {
     moving = false;
+    const placement = $editorStore.placedSignature;
+    if (placement) rememberPlacement(placement);
   }
 
   // Resize via the corner handle, always preserving the signature's aspect ratio.
@@ -145,6 +180,8 @@
     resizing = false;
     resizeStart = null;
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    const placement = $editorStore.placedSignature;
+    if (placement) rememberPlacement(placement);
   }
 </script>
 
@@ -161,6 +198,20 @@
 
   {#if error}
     <div class="p-4 text-sm text-red-600">{error}</div>
+  {/if}
+
+  {#if !$editorStore.placedSignature && $lastPlacement && $signatureStore.previewUrl}
+    <div class="pointer-events-none absolute inset-x-0 top-4 flex justify-center">
+      <button
+        type="button"
+        class="pointer-events-auto rounded-full border border-blue-300 bg-white/95 px-4 py-1.5 text-sm
+          font-medium text-blue-600 shadow-lg backdrop-blur transition-colors hover:bg-blue-50
+          dark:border-blue-700 dark:bg-neutral-900/95 dark:text-blue-400 dark:hover:bg-neutral-800"
+        onclick={useLastPosition}
+      >
+        Use last position
+      </button>
+    </div>
   {/if}
 
   {#if $editorStore.placedSignature && $signatureStore.previewUrl}

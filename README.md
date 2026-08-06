@@ -52,6 +52,7 @@ _Last updated: 2026-08-06._
 - Resize a placed signature via a corner handle, with aspect ratio always locked to the original image (`lib/signature/layout.ts`).
 - Zoom in / out / reset controls in the toolbar; the placed signature rescales to stay in the same spot on the page as you zoom (`stores/editor.ts`).
 - Toolbar stays fixed (sticky) at the top while scrolling.
+- **Use last position**: the signature's placement (position and size) is remembered as a ratio of the page dimensions, so it carries over to the next document. A "Use last position" button appears over the page when a saved placement exists and nothing has been placed yet (`stores/placement.ts`).
 - Dark mode toggle (`components/ThemeToggle.svelte`, `stores/theme.ts`): defaults to the OS's `prefers-color-scheme`, can be switched manually, and the choice is persisted in `localStorage`.
 
 **Visible watermark**
