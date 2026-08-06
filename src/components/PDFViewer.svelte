@@ -198,7 +198,7 @@
     <!-- Placed before the canvas so its static (pre-sticky) position starts at the top of the
          page; height:0 keeps it from pushing the canvas down, and sticky pins it below the
          toolbar while scrolling instead of scrolling away with the page. -->
-    <div class="sticky top-20 z-10 flex justify-center overflow-visible" style="height: 0;">
+    <div class="sticky top-20 z-10 flex items-start justify-center overflow-visible" style="height: 0;">
       <button
         type="button"
         class="rounded-full border border-blue-300 bg-white/95 px-4 py-1.5 text-sm
