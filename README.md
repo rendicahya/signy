@@ -4,7 +4,7 @@ Sign PDF documents with protected handwritten signatures, entirely in your brows
 
 **Live app:** https://rendicahya.github.io/signy/
 
-No backend, no uploads, no accounts — everything runs client-side and is designed to work fully offline once loaded. See `CLAUDE.md` for the full product spec, and `FEATURES.md` for what's actually implemented versus still on the roadmap.
+No backend, no uploads, no accounts — everything runs client-side and is designed to work fully offline once loaded. See `FEATURES.md` for what's actually implemented versus still on the roadmap.
 
 ## Stack
 
