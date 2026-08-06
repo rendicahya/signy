@@ -194,17 +194,14 @@
   ondragleave={() => (isDragOver = false)}
   ondrop={onDrop}
 >
-  <canvas bind:this={canvasEl} class="rounded-lg shadow-lg"></canvas>
-
-  {#if error}
-    <div class="p-4 text-sm text-red-600">{error}</div>
-  {/if}
-
   {#if !$editorStore.placedSignature && $lastPlacement && $signatureStore.previewUrl}
-    <div class="pointer-events-none absolute inset-x-0 top-4 flex justify-center">
+    <!-- Placed before the canvas so its static (pre-sticky) position starts at the top of the
+         page; height:0 keeps it from pushing the canvas down, and sticky pins it below the
+         toolbar while scrolling instead of scrolling away with the page. -->
+    <div class="sticky top-20 z-10 flex justify-center overflow-visible" style="height: 0;">
       <button
         type="button"
-        class="pointer-events-auto rounded-full border border-blue-300 bg-white/95 px-4 py-1.5 text-sm
+        class="rounded-full border border-blue-300 bg-white/95 px-4 py-1.5 text-sm
           font-medium text-blue-600 shadow-lg backdrop-blur transition-colors hover:bg-blue-50
           dark:border-blue-700 dark:bg-neutral-900/95 dark:text-blue-400 dark:hover:bg-neutral-800"
         onclick={useLastPosition}
@@ -212,6 +209,12 @@
         Use last position
       </button>
     </div>
+  {/if}
+
+  <canvas bind:this={canvasEl} class="rounded-lg shadow-lg"></canvas>
+
+  {#if error}
+    <div class="p-4 text-sm text-red-600">{error}</div>
   {/if}
 
   {#if $editorStore.placedSignature && $signatureStore.previewUrl}
