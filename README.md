@@ -45,7 +45,8 @@ _Last updated: 2026-08-06._
 
 **Editor**
 
-- PDF rendered client-side with pdf.js (`lib/pdf/loader.ts`). **Only the first page** is rendered and signed — see Not yet implemented.
+- PDF rendered client-side with pdf.js (`lib/pdf/loader.ts`).
+- **Multi-page navigation**: Previous/Next controls and a "Page X / Y" indicator in the toolbar (shown once a PDF has more than one page). The signature can be placed on any page — each placement remembers which page it belongs to, is only shown while viewing that page, and export embeds it on that same page while preserving every other page untouched (`stores/editor.ts`, `lib/pdf/export.ts`). Only one signature placement is tracked at a time (see Not yet implemented).
 - Drag the signature from the floating panel onto the document; drop position is calculated from the cursor.
 - Click-to-place fallback for non-drag interactions.
 - Move a placed signature by dragging it.
@@ -82,8 +83,7 @@ _Last updated: 2026-08-06._
 - **Watermark opacity control** — currently hardcoded at 0.25 in `lib/watermark/visible.ts`.
 - **Invisible watermark** — DWT/DCT-based payload embedding. No code exists for this yet.
 - **Verification page** — a way to check whether a PDF was signed with Signy and read back the watermark payload.
-- **Multi-page PDF support.** The viewer and export path are both hardcoded to page 1 (`doc.getPage(1)` in the viewer, `pdfDoc.getPage(0)` in export). There's no page selector, and documents with more than one page can only be signed on the first page.
-- **Single signature placement.** Only one placed signature is tracked at a time; there's no way to sign multiple spots or multiple pages in one export.
+- **Single signature placement.** Only one placed signature is tracked at a time (even across pages) — there's no way to sign multiple spots or multiple pages in one export yet.
 - **No way to remove a placed signature** without resetting the whole session (the "Start Over" button clears the PDF too).
 - **No file size limit on uploads.** Type is now validated, but there's still no cap on file size, so an extremely large PDF or image could be dropped without warning.
 - **Signature background removal.** Scanned/photographed signatures often have an off-white background; there's no automatic cleanup.

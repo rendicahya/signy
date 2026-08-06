@@ -38,6 +38,7 @@
   async function loadDocument() {
     try {
       doc = await loadPdf(file);
+      editorStore.setPageCount(doc.numPages);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load PDF';
     }
@@ -45,15 +46,23 @@
 
   onMount(loadDocument);
 
-  // Re-render the current page whenever the zoom level, rotation, or the document changes.
+  // Re-render the current page whenever the page number, zoom level, rotation, or the document changes.
   $effect(() => {
+    const pageNumber = $editorStore.pageNumber;
     const scale = $editorStore.renderScale;
     const rotation = $editorStore.rotation;
     if (!doc || !canvasEl) return;
-    renderPageToCanvas(doc, 1, canvasEl, scale, rotation).catch((e) => {
+    renderPageToCanvas(doc, pageNumber, canvasEl, scale, rotation).catch((e) => {
       error = e instanceof Error ? e.message : 'Failed to render PDF';
     });
   });
+
+  // Only show a placement (or the placed-signature overlay) when we're looking at its own page.
+  const placementOnCurrentPage = $derived(
+    $editorStore.placedSignature && $editorStore.placedSignature.page === $editorStore.pageNumber
+      ? $editorStore.placedSignature
+      : null,
+  );
 
   function clamp(value: number, min: number, max: number): number {
     return Math.min(Math.max(value, min), max);
@@ -80,6 +89,7 @@
       height,
       x: clamp(ratio.xRatio * rect.width, 0, rect.width - width),
       y: clamp(ratio.yRatio * rect.height, 0, rect.height - height),
+      page: $editorStore.pageNumber,
     };
   }
 
@@ -105,7 +115,7 @@
     const x = clamp(e.clientX - rect.left - width / 2, 0, rect.width - width);
     const y = clamp(e.clientY - rect.top - height / 2, 0, rect.height - height);
 
-    const placement = { x, y, width, height };
+    const placement = { x, y, width, height, page: $editorStore.pageNumber };
     editorStore.placeSignature(placement);
     rememberPlacement(placement);
   }
@@ -142,8 +152,7 @@
   // Resize via the corner handle, always preserving the signature's aspect ratio.
   const MIN_SIZE = 24;
   let resizing = false;
-  let resizeStart: { pointerX: number; pointerY: number; x: number; y: number; width: number; height: number } | null =
-    null;
+  let resizeStart: (PlacedSignature & { pointerX: number; pointerY: number }) | null = null;
 
   function onResizePointerDown(e: PointerEvent) {
     e.stopPropagation();
@@ -195,7 +204,7 @@
   ondragleave={() => (isDragOver = false)}
   ondrop={onDrop}
 >
-  {#if !$editorStore.placedSignature && $lastPlacement && $signatureStore.previewUrl}
+  {#if !placementOnCurrentPage && $lastPlacement && $signatureStore.previewUrl}
     <!-- Placed before the canvas so its static (pre-sticky) position starts at the top of the
          page; height:0 keeps it from pushing the canvas down, and sticky pins it below the
          toolbar while scrolling instead of scrolling away with the page. -->
@@ -218,14 +227,14 @@
     <div class="p-4 text-sm text-red-600">{error}</div>
   {/if}
 
-  {#if $editorStore.placedSignature && $signatureStore.previewUrl}
+  {#if placementOnCurrentPage && $signatureStore.previewUrl}
     <div
       data-placed-signature
       class="absolute cursor-move touch-none border-2 border-blue-400/70 bg-blue-100/10"
-      style:left="{$editorStore.placedSignature.x}px"
-      style:top="{$editorStore.placedSignature.y}px"
-      style:width="{$editorStore.placedSignature.width}px"
-      style:height="{$editorStore.placedSignature.height}px"
+      style:left="{placementOnCurrentPage.x}px"
+      style:top="{placementOnCurrentPage.y}px"
+      style:width="{placementOnCurrentPage.width}px"
+      style:height="{placementOnCurrentPage.height}px"
       onpointerdown={onOverlayPointerDown}
       onpointermove={onOverlayPointerMove}
       onpointerup={onOverlayPointerUp}
@@ -240,9 +249,9 @@
       {#if previewLines.length > 0}
         <div
           class="pointer-events-none absolute inset-0 flex select-none flex-col overflow-hidden leading-tight text-black"
-          style:font-size="{$editorStore.placedSignature.height * 0.12}px"
+          style:font-size="{placementOnCurrentPage.height * 0.12}px"
           style:opacity="0.25"
-          style:padding="{$editorStore.placedSignature.height * 0.06}px"
+          style:padding="{placementOnCurrentPage.height * 0.06}px"
           style:justify-content={previewAlign.justifyContent}
           style:align-items={previewAlign.alignItems}
           style:text-align={previewAlign.textAlign}

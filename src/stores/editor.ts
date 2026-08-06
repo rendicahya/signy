@@ -6,11 +6,14 @@ export interface PlacedSignature {
   y: number;
   width: number;
   height: number;
+  /** 1-indexed page this placement belongs to. */
+  page: number;
 }
 
 export interface EditorState {
   pdfFile: File | null;
   pageNumber: number;
+  pageCount: number;
   placedSignature: PlacedSignature | null;
   /** pdf.js render scale for the visible canvas; also used to map placement back to PDF points on export. */
   renderScale: number;
@@ -31,8 +34,11 @@ function rescale(state: EditorState, nextScale: number): EditorState {
   const renderScale = clamp(nextScale, MIN_RENDER_SCALE, MAX_RENDER_SCALE);
   const factor = renderScale / state.renderScale;
   // Rescale the placed signature so it stays over the same spot on the page as we zoom.
+  // Zoom applies uniformly to every page, so this stays correct regardless of which
+  // page the placement belongs to.
   const placedSignature = state.placedSignature
     ? {
+        ...state.placedSignature,
         x: state.placedSignature.x * factor,
         y: state.placedSignature.y * factor,
         width: state.placedSignature.width * factor,
@@ -46,13 +52,38 @@ function createEditorStore() {
   const { subscribe, update, set } = writable<EditorState>({
     pdfFile: null,
     pageNumber: 1,
+    pageCount: 1,
     placedSignature: null,
     renderScale: DEFAULT_RENDER_SCALE,
     rotation: 0,
   });
 
   function loadPdf(file: File) {
-    set({ pdfFile: file, pageNumber: 1, placedSignature: null, renderScale: DEFAULT_RENDER_SCALE, rotation: 0 });
+    set({
+      pdfFile: file,
+      pageNumber: 1,
+      pageCount: 1,
+      placedSignature: null,
+      renderScale: DEFAULT_RENDER_SCALE,
+      rotation: 0,
+    });
+  }
+
+  /** Called once pdf.js has parsed the document and knows how many pages it has. */
+  function setPageCount(count: number) {
+    update((state) => ({ ...state, pageCount: Math.max(1, count) }));
+  }
+
+  function goToPage(page: number) {
+    update((state) => ({ ...state, pageNumber: clamp(page, 1, state.pageCount) }));
+  }
+
+  function nextPage() {
+    update((state) => ({ ...state, pageNumber: clamp(state.pageNumber + 1, 1, state.pageCount) }));
+  }
+
+  function prevPage() {
+    update((state) => ({ ...state, pageNumber: clamp(state.pageNumber - 1, 1, state.pageCount) }));
   }
 
   function placeSignature(placement: PlacedSignature) {
@@ -86,9 +117,9 @@ function createEditorStore() {
     update((state) => ({
       ...state,
       rotation: ((state.rotation + delta) % 360 + 360) % 360,
-      // The canvas dimensions change with rotation, so a pixel-based placement
-      // from before the rotation no longer means anything — clear it. The
-      // "Use last position" flow lets the user quickly re-place it.
+      // Rotation applies uniformly to every page, so any existing placement —
+      // regardless of which page it's on — would misalign the next time its
+      // page is rendered. Clear it; "Use last position" makes re-placing fast.
       placedSignature: null,
     }));
   }
@@ -102,12 +133,23 @@ function createEditorStore() {
   }
 
   function reset() {
-    set({ pdfFile: null, pageNumber: 1, placedSignature: null, renderScale: DEFAULT_RENDER_SCALE, rotation: 0 });
+    set({
+      pdfFile: null,
+      pageNumber: 1,
+      pageCount: 1,
+      placedSignature: null,
+      renderScale: DEFAULT_RENDER_SCALE,
+      rotation: 0,
+    });
   }
 
   return {
     subscribe,
     loadPdf,
+    setPageCount,
+    goToPage,
+    nextPage,
+    prevPage,
     placeSignature,
     updatePlacement,
     setRenderScale,

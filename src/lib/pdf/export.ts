@@ -9,7 +9,7 @@ export interface ExportParams {
   placement: PlacedSignature;
   /** Canvas render scale used by PDFViewer, needed to map pixels back to PDF points. */
   renderScale: number;
-  /** Additional rotation (0/90/180/270) the user chose in the editor, on top of the page's own rotation. */
+  /** Additional rotation (0/90/180/270) the user chose in the editor, on top of each page's own rotation. */
   rotation?: number;
   watermark?: WatermarkOptions;
 }
@@ -19,10 +19,11 @@ function blobToBytes(blob: Blob): Promise<Uint8Array> {
 }
 
 /**
- * Watermarks the signature, embeds it into the first page of the PDF at the
- * placed position, and returns the signed PDF bytes. Nothing here touches
- * the network — everything runs with pdf-lib (and pdf.js for coordinate
- * mapping) in the browser.
+ * Watermarks the signature, embeds it into the page it was placed on, and
+ * returns the signed PDF bytes. Nothing here touches the network —
+ * everything runs with pdf-lib (and pdf.js for coordinate mapping) in the
+ * browser. All pages are preserved; only the placement's own page gets the
+ * signature.
  */
 export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array> {
   const { pdfFile, signatureBlob, placement, renderScale, rotation = 0, watermark } = params;
@@ -32,13 +33,13 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
 
   const pdfBytes = await blobToBytes(pdfFile);
 
-  // `placement` is in canvas pixel coordinates for whatever scale + rotation
-  // PDFViewer was displaying. Re-derive the exact same pdf.js viewport here
-  // and use its built-in point conversion — far less error-prone than
-  // reimplementing the rotation trigonometry by hand, and it stays correct
-  // for all four 90°-multiple rotations.
+  // `placement` is in canvas pixel coordinates for whatever page/scale/rotation
+  // PDFViewer was displaying. Re-derive the exact same pdf.js viewport for that
+  // page here and use its built-in point conversion — far less error-prone
+  // than reimplementing the rotation trigonometry by hand, and it stays
+  // correct for all four 90°-multiple rotations.
   const pdfjsDoc = await loadPdf(pdfFile);
-  const pdfjsPage = await pdfjsDoc.getPage(1);
+  const pdfjsPage = await pdfjsDoc.getPage(placement.page);
   const totalRotation = getTotalRotation(pdfjsPage, rotation);
   const viewport = pdfjsPage.getViewport({ scale: renderScale, rotation: totalRotation });
 
@@ -51,14 +52,20 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
   const height = Math.abs(y2 - y1);
 
   const pdfDoc = await PDFDocument.load(pdfBytes);
-  const page = pdfDoc.getPage(0);
+  const targetPage = pdfDoc.getPage(placement.page - 1); // pdf-lib pages are 0-indexed
   const pngImage = await pdfDoc.embedPng(pngBytes);
 
-  page.drawImage(pngImage, { x, y, width, height });
+  targetPage.drawImage(pngImage, { x, y, width, height });
 
-  // Persist the rotation the user chose in the editor into the exported file itself.
+  // The rotation the user chose represents "this scan is sideways" and is
+  // applied to every page uniformly (each relative to its own existing
+  // rotation), so the whole exported document keeps a consistent orientation
+  // — not just the page that got signed.
   if (rotation !== 0) {
-    page.setRotation(degrees(totalRotation));
+    for (const page of pdfDoc.getPages()) {
+      const current = page.getRotation().angle;
+      page.setRotation(degrees(((current + rotation) % 360 + 360) % 360));
+    }
   }
 
   return pdfDoc.save();

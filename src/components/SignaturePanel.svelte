@@ -25,7 +25,7 @@
   function placeAtDefault() {
     // Simple click-to-place fallback for non-drag interactions (e.g. touch).
     const { width, height } = fitWithinBox(state.naturalWidth, state.naturalHeight);
-    editorStore.placeSignature({ x: 40, y: 40, width, height });
+    editorStore.placeSignature({ x: 40, y: 40, width, height, page: $editorStore.pageNumber });
   }
 </script>
 

@@ -17,6 +17,36 @@
   </div>
 
   <div class="flex items-center gap-3">
+    {#if $editorStore.pageCount > 1}
+      <div class="flex items-center gap-1 rounded-lg border border-neutral-200 px-1 py-1 dark:border-neutral-800">
+        <button
+          type="button"
+          aria-label="Previous page"
+          title="Previous page"
+          class="rounded px-2 py-0.5 text-sm text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed
+            disabled:opacity-30 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          disabled={$editorStore.pageNumber <= 1}
+          onclick={() => editorStore.prevPage()}
+        >
+          ‹
+        </button>
+        <span class="min-w-[4.5rem] px-1 text-center text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+          Page {$editorStore.pageNumber} / {$editorStore.pageCount}
+        </span>
+        <button
+          type="button"
+          aria-label="Next page"
+          title="Next page"
+          class="rounded px-2 py-0.5 text-sm text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed
+            disabled:opacity-30 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          disabled={$editorStore.pageNumber >= $editorStore.pageCount}
+          onclick={() => editorStore.nextPage()}
+        >
+          ›
+        </button>
+      </div>
+    {/if}
+
     <div class="flex items-center gap-1 rounded-lg border border-neutral-200 px-1 py-1 dark:border-neutral-800">
       <button
         type="button"
