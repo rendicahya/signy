@@ -38,6 +38,7 @@ _Last updated: 2026-08-06._
 
 - Upload PDF via drag & drop or click-to-browse (`components/UploadCard.svelte`).
 - Upload signature image via drag & drop or click-to-browse (`components/SignatureUploader.svelte`).
+- File type is validated on both the PDF and signature upload slots — including drag & drop, where the browser's `accept` attribute alone doesn't help (`lib/utils/fileValidation.ts`). A PDF dropped onto the signature slot (or vice versa) is rejected with an inline message instead of silently accepted.
 - Signature persisted locally in IndexedDB (`lib/signature/db.ts`, `stores/signature.ts`) — never localStorage, never uploaded anywhere.
 - Returning users see their saved signature automatically, with Replace and Delete actions.
 - The editor only opens once **both** a PDF and a signature are present — uploading the PDF first no longer skips ahead.
@@ -82,7 +83,7 @@ _Last updated: 2026-08-06._
 - **Multi-page PDF support.** The viewer and export path are both hardcoded to page 1 (`doc.getPage(1)` in the viewer, `pdfDoc.getPage(0)` in export). There's no page selector, and documents with more than one page can only be signed on the first page.
 - **Single signature placement.** Only one placed signature is tracked at a time; there's no way to sign multiple spots or multiple pages in one export.
 - **No way to remove a placed signature** without resetting the whole session (the "Start Over" button clears the PDF too).
-- **No upload validation.** File type/size aren't checked on drop, so a very large PDF or a non-image file dropped onto the signature card could slip through past the `accept` attribute (which only filters the file picker, not drag & drop).
+- **No file size limit on uploads.** Type is now validated, but there's still no cap on file size, so an extremely large PDF or image could be dropped without warning.
 - **Signature background removal.** Scanned/photographed signatures often have an off-white background; there's no automatic cleanup.
 - **No offline/PWA support.** Despite "no backend, works entirely offline" being a core principle, there's no service worker yet — the app still requires a network fetch for the very first load.
 - **No automated tests.** In particular, the pixel-to-PDF-point coordinate mapping in `lib/pdf/export.ts` and the resize/zoom rescaling logic in `stores/editor.ts` are easy to get subtly wrong and aren't covered by any tests.

@@ -1,19 +1,38 @@
 <script lang="ts">
+  import { isFileAccepted } from '../lib/utils/fileValidation';
+
   interface Props {
     title: string;
     subtitle?: string;
     accept?: string;
+    /** Shown when a rejected file is dropped or picked. */
+    errorMessage?: string;
     onFile: (file: File) => void;
   }
 
-  let { title, subtitle = 'Drag & drop or click to browse', accept = '', onFile }: Props = $props();
+  let {
+    title,
+    subtitle = 'Drag & drop or click to browse',
+    accept = '',
+    errorMessage = 'That file type is not supported.',
+    onFile,
+  }: Props = $props();
 
   let isDragging = $state(false);
+  let error: string | null = $state(null);
   let inputEl: HTMLInputElement;
 
   function handleFiles(files: FileList | null) {
     const file = files?.[0];
-    if (file) onFile(file);
+    if (!file) return;
+
+    if (!isFileAccepted(file, accept)) {
+      error = errorMessage;
+      return;
+    }
+
+    error = null;
+    onFile(file);
   }
 
   function onDrop(e: DragEvent) {
@@ -30,6 +49,7 @@
     dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600 dark:hover:bg-neutral-800"
   class:border-blue-500={isDragging}
   class:bg-blue-50={isDragging}
+  class:border-red-400={!!error}
   ondragover={(e) => { e.preventDefault(); isDragging = true; }}
   ondragleave={() => (isDragging = false)}
   ondrop={onDrop}
@@ -37,6 +57,9 @@
 >
   <span class="text-lg font-medium">{title}</span>
   <span class="text-sm text-neutral-500 dark:text-neutral-400">{subtitle}</span>
+  {#if error}
+    <span class="text-sm text-red-600 dark:text-red-400">{error}</span>
+  {/if}
 </button>
 
 <input
@@ -44,5 +67,8 @@
   type="file"
   {accept}
   class="hidden"
-  onchange={(e) => handleFiles((e.target as HTMLInputElement).files)}
+  onchange={(e) => {
+    handleFiles((e.target as HTMLInputElement).files);
+    (e.target as HTMLInputElement).value = '';
+  }}
 />

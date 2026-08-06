@@ -54,7 +54,13 @@
             </button>
           </div>
         {:else}
-          <UploadCard title="Upload PDF" subtitle="Drag & drop or click to browse" accept="application/pdf" onFile={onPdfFile} />
+          <UploadCard
+            title="Upload PDF"
+            subtitle="Drag & drop or click to browse"
+            accept="application/pdf,.pdf"
+            errorMessage="Please upload a PDF file."
+            onFile={onPdfFile}
+          />
         {/if}
         <SignatureUploader />
       </div>
