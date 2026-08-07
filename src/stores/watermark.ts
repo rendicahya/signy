@@ -26,3 +26,10 @@ export type WatermarkPosition =
 
 /** Where the watermark text sits on top of the signature image. */
 export const watermarkPosition = persistedWritable<WatermarkPosition>('watermarkPosition', 'center');
+
+/** Watermark font size, as a ratio of the signature image's height. Controlled by a slider in the UI. */
+export const watermarkFontScale = persistedWritable<number>('watermarkFontScale', 0.12);
+
+export const WATERMARK_FONT_SCALE_MIN = 0.06;
+export const WATERMARK_FONT_SCALE_MAX = 0.24;
+export const WATERMARK_FONT_SCALE_STEP = 0.01;

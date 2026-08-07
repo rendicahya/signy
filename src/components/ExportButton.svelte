@@ -1,7 +1,7 @@
 <script lang="ts">
   import { editorStore, activeDocument } from '../stores/editor';
   import { signatureStore } from '../stores/signature';
-  import { watermarkText, includeTimestamp, watermarkPosition } from '../stores/watermark';
+  import { watermarkText, includeTimestamp, watermarkPosition, watermarkFontScale } from '../stores/watermark';
   import { lastPlacement } from '../stores/placement';
   import { exportSignedPdf, downloadSignedPdf, exportAllAsZip, downloadZip, resolvePlacement } from '../lib/pdf/export';
 
@@ -10,7 +10,12 @@
   let error: string | null = $state(null);
 
   function currentWatermark() {
-    return { customText: $watermarkText, includeTimestamp: $includeTimestamp, position: $watermarkPosition };
+    return {
+      customText: $watermarkText,
+      includeTimestamp: $includeTimestamp,
+      position: $watermarkPosition,
+      fontScale: $watermarkFontScale,
+    };
   }
 
   async function onExportOne() {

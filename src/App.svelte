@@ -12,6 +12,7 @@
   import { editorStore, activeDocument } from './stores/editor';
   import { signatureStore } from './stores/signature';
   import { theme } from './stores/theme';
+  import { pageSidebarOpen, togglePageSidebar } from './stores/layout';
   import { isFileAccepted } from './lib/utils/fileValidation';
   import { clearCachedPdf } from './lib/pdf/docCache';
 
@@ -151,8 +152,30 @@
     </div>
   {:else if active}
     <Toolbar />
-    <div class="flex flex-1 overflow-hidden">
+    <div class="relative flex flex-1 overflow-hidden">
       <PageSidebar />
+      <button
+        type="button"
+        aria-label={$pageSidebarOpen ? 'Hide page panel' : 'Show page panel'}
+        title={$pageSidebarOpen ? 'Hide page panel' : 'Show page panel'}
+        class="absolute top-1/2 z-20 flex h-10 w-4 -translate-y-1/2 items-center justify-center rounded-r-md
+          border border-l-0 border-neutral-200 bg-white text-neutral-400 shadow-sm transition-[left]
+          hover:bg-neutral-100 hover:text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900
+          dark:text-neutral-500 dark:hover:bg-neutral-800"
+        style:left={$pageSidebarOpen ? '11rem' : '0'}
+        onclick={togglePageSidebar}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          class="h-3.5 w-3.5 transition-transform"
+          class:rotate-180={!$pageSidebarOpen}
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6" />
+        </svg>
+      </button>
       <div class="flex flex-1 flex-col overflow-hidden">
         <div class="flex-1 overflow-y-auto px-6 py-8">
           {#key active.id}

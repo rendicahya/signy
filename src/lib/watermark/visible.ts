@@ -21,6 +21,8 @@ export interface WatermarkOptions {
   timestamp?: Date;
   /** 0 (invisible) – 1 (fully opaque). */
   opacity?: number;
+  /** Font size as a ratio of the signature image's height. Defaults to 0.12. */
+  fontScale?: number;
 }
 
 /** Formats as "1 Jan 2026, 14:30" — 24-hour time, locale-independent. */
@@ -79,7 +81,7 @@ export async function applyVisibleWatermark(
 
   if (lines.length > 0) {
     const opacity = opts.opacity ?? 0.25;
-    const fontSize = Math.max(10, Math.round(canvas.height * 0.12));
+    const fontSize = Math.max(10, Math.round(canvas.height * (opts.fontScale ?? 0.12)));
     const lineHeight = fontSize * 1.2;
     const padding = Math.round(canvas.height * 0.06);
     const { vertical, horizontal } = parsePosition(opts.position);

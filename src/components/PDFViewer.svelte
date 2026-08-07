@@ -4,7 +4,13 @@
   import { getCachedPdf } from '../lib/pdf/docCache';
   import { editorStore, activeDocument, type PlacedSignature } from '../stores/editor';
   import { signatureStore } from '../stores/signature';
-  import { watermarkText, includeTimestamp, watermarkPosition, type WatermarkPosition } from '../stores/watermark';
+  import {
+    watermarkText,
+    includeTimestamp,
+    watermarkPosition,
+    watermarkFontScale,
+    type WatermarkPosition,
+  } from '../stores/watermark';
   import { lastPlacement } from '../stores/placement';
   import { fitWithinBox } from '../lib/signature/layout';
   import { buildWatermarkLines } from '../lib/watermark/visible';
@@ -214,7 +220,7 @@
       {#if previewLines.length > 0}
         <div
           class="pointer-events-none absolute inset-0 flex select-none flex-col overflow-hidden leading-tight text-black"
-          style:font-size="{placementOnCurrentPage.height * 0.12}px"
+          style:font-size="{placementOnCurrentPage.height * $watermarkFontScale}px"
           style:opacity="0.25"
           style:padding="{placementOnCurrentPage.height * 0.06}px"
           style:justify-content={previewAlign.justifyContent}

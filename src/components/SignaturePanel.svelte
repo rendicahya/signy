@@ -2,7 +2,16 @@
   import { signatureStore } from '../stores/signature';
   import { editorStore, activeDocument } from '../stores/editor';
   import { lastPlacement } from '../stores/placement';
-  import { watermarkText, includeTimestamp, watermarkPosition, type WatermarkPosition } from '../stores/watermark';
+  import {
+    watermarkText,
+    includeTimestamp,
+    watermarkPosition,
+    watermarkFontScale,
+    WATERMARK_FONT_SCALE_MIN,
+    WATERMARK_FONT_SCALE_MAX,
+    WATERMARK_FONT_SCALE_STEP,
+    type WatermarkPosition,
+  } from '../stores/watermark';
   import { fitWithinBox } from '../lib/signature/layout';
   import { getCachedPdf } from '../lib/pdf/docCache';
   import { placementFromRatioForDocument } from '../lib/pdf/placement';
@@ -157,6 +166,19 @@
           ></button>
         {/each}
       </div>
+
+      <div class="mb-1 mt-3 flex items-center justify-between">
+        <p class="text-xs font-medium text-neutral-500 dark:text-neutral-400">Watermark size</p>
+        <span class="text-xs tabular-nums text-neutral-400">{Math.round($watermarkFontScale * 100)}%</span>
+      </div>
+      <input
+        type="range"
+        min={WATERMARK_FONT_SCALE_MIN}
+        max={WATERMARK_FONT_SCALE_MAX}
+        step={WATERMARK_FONT_SCALE_STEP}
+        bind:value={$watermarkFontScale}
+        class="w-full accent-blue-600"
+      />
 
       <p class="mt-2 text-xs text-neutral-400">Stamped onto the signature when you export.</p>
     </div>
