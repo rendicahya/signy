@@ -36,3 +36,10 @@ export const WATERMARK_FONT_SCALE_STEP = 0.01;
 
 /** Watermark text color, as a CSS hex string. */
 export const watermarkColor = persistedWritable<string>('watermarkColor', '#000000');
+
+/** Watermark opacity, 0 (invisible) to 1 (fully opaque). Controlled by a slider in the UI. */
+export const watermarkOpacity = persistedWritable<number>('watermarkOpacity', 0.25);
+
+export const WATERMARK_OPACITY_MIN = 0.05;
+export const WATERMARK_OPACITY_MAX = 1;
+export const WATERMARK_OPACITY_STEP = 0.05;

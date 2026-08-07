@@ -72,10 +72,12 @@ _Last updated: 2026-08-07._
 - Multi-line custom watermark text (textarea input).
 - Optional "stamp current date & time" checkbox, formatted as `1 Jan 2026, 14:30` (24-hour, `lib/watermark/visible.ts`).
 - 9-position picker (top/center/bottom × left/center/right) for where the text sits on the signature, centered in the sidebar.
-- Size slider (6%–24% of the signature image's height), labeled Small/Medium/Large rather than a raw percentage.
+- Size slider (6%–24% of the signature image's height).
+- Color picker (native `<input type="color">`), default black.
+- Opacity slider (5%–100%), default 25%.
 - Live preview of the watermark directly on the placed signature in the editor, using the exact same layout math as the final export.
 - At export, the watermark is flattened into the signature image itself (never drawn on the PDF page directly), for anti-crop/anti-screenshot protection.
-- Watermark text, timestamp checkbox, position, and size preference are saved in `localStorage` so they persist across sessions (`lib/utils/persist.ts`).
+- Watermark text, timestamp checkbox, position, size, color, and opacity preferences are all saved in `localStorage` so they persist across sessions (`lib/utils/persist.ts`).
 
 **Deployment**
 
@@ -85,7 +87,6 @@ _Last updated: 2026-08-07._
 ### Not yet implemented
 
 - **Rotate the placed signature itself** (independent of the page rotation above — e.g. angling the signature image within its box).
-- **Watermark opacity control** — currently hardcoded at 0.25 in `lib/watermark/visible.ts`.
 - **Invisible watermark** — DWT/DCT-based payload embedding. No code exists for this yet.
 - **Verification page** — a way to check whether a PDF was signed with Signy and read back the watermark payload.
 - **One signature placement per PDF.** Each document tracks a single placed signature at a time — no way to sign multiple spots on the same document in one export yet (though different documents in the same session can each have their own placement).

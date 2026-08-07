@@ -10,6 +10,7 @@
     watermarkPosition,
     watermarkFontScale,
     watermarkColor,
+    watermarkOpacity,
     type WatermarkPosition,
   } from '../stores/watermark';
   import { lastPlacement } from '../stores/placement';
@@ -223,7 +224,7 @@
           class="pointer-events-none absolute inset-0 flex select-none flex-col overflow-hidden leading-tight"
           style:font-size="{placementOnCurrentPage.height * $watermarkFontScale}px"
           style:color={$watermarkColor}
-          style:opacity="0.25"
+          style:opacity={$watermarkOpacity}
           style:padding="{placementOnCurrentPage.height * 0.06}px"
           style:justify-content={previewAlign.justifyContent}
           style:align-items={previewAlign.alignItems}

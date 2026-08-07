@@ -7,6 +7,7 @@
     watermarkPosition,
     watermarkFontScale,
     watermarkColor,
+    watermarkOpacity,
   } from '../stores/watermark';
   import { lastPlacement } from '../stores/placement';
   import { exportSignedPdf, downloadSignedPdf, exportAllAsZip, downloadZip, resolvePlacement } from '../lib/pdf/export';
@@ -22,6 +23,7 @@
       position: $watermarkPosition,
       fontScale: $watermarkFontScale,
       color: $watermarkColor,
+      opacity: $watermarkOpacity,
     };
   }
 

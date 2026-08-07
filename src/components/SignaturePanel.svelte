@@ -11,6 +11,10 @@
     WATERMARK_FONT_SCALE_MAX,
     WATERMARK_FONT_SCALE_STEP,
     watermarkColor,
+    watermarkOpacity,
+    WATERMARK_OPACITY_MIN,
+    WATERMARK_OPACITY_MAX,
+    WATERMARK_OPACITY_STEP,
     type WatermarkPosition,
   } from '../stores/watermark';
   import { fitWithinBox } from '../lib/signature/layout';
@@ -259,6 +263,16 @@
             dark:border-neutral-600"
         />
       </div>
+
+      <p class="mb-1 mt-3 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Watermark opacity</p>
+      <input
+        type="range"
+        min={WATERMARK_OPACITY_MIN}
+        max={WATERMARK_OPACITY_MAX}
+        step={WATERMARK_OPACITY_STEP}
+        bind:value={$watermarkOpacity}
+        class="w-full accent-blue-600"
+      />
 
       <p class="mt-2 text-xs text-neutral-400">Stamped onto the signature when you export.</p>
     </div>
