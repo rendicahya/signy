@@ -23,6 +23,8 @@ export interface WatermarkOptions {
   opacity?: number;
   /** Font size as a ratio of the signature image's height. Defaults to 0.12. */
   fontScale?: number;
+  /** CSS color for the watermark text. Defaults to '#000000'. */
+  color?: string;
 }
 
 /** Formats as "1 Jan 2026, 14:30" — 24-hour time, locale-independent. */
@@ -88,7 +90,7 @@ export async function applyVisibleWatermark(
 
     ctx.save();
     ctx.globalAlpha = opacity;
-    ctx.fillStyle = '#000000';
+    ctx.fillStyle = opts.color ?? '#000000';
     ctx.font = `${fontSize}px sans-serif`;
     ctx.textBaseline = 'middle';
 

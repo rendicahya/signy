@@ -9,6 +9,7 @@
     includeTimestamp,
     watermarkPosition,
     watermarkFontScale,
+    watermarkColor,
     type WatermarkPosition,
   } from '../stores/watermark';
   import { lastPlacement } from '../stores/placement';
@@ -219,8 +220,9 @@
 
       {#if previewLines.length > 0}
         <div
-          class="pointer-events-none absolute inset-0 flex select-none flex-col overflow-hidden leading-tight text-black"
+          class="pointer-events-none absolute inset-0 flex select-none flex-col overflow-hidden leading-tight"
           style:font-size="{placementOnCurrentPage.height * $watermarkFontScale}px"
+          style:color={$watermarkColor}
           style:opacity="0.25"
           style:padding="{placementOnCurrentPage.height * 0.06}px"
           style:justify-content={previewAlign.justifyContent}

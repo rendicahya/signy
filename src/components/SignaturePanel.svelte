@@ -10,6 +10,7 @@
     WATERMARK_FONT_SCALE_MIN,
     WATERMARK_FONT_SCALE_MAX,
     WATERMARK_FONT_SCALE_STEP,
+    watermarkColor,
     type WatermarkPosition,
   } from '../stores/watermark';
   import { fitWithinBox } from '../lib/signature/layout';
@@ -47,6 +48,15 @@
   const canUseLastPosition = $derived(!placementOnCurrentPage && !!$lastPlacement);
 
   let applyingLastPosition = $state(false);
+
+  let applyingToAll = $state(false);
+  let applyToAllError: string | null = $state(null);
+
+  // Page counts are resolved eagerly for every uploaded document (not just
+  // the active one) as soon as they're added — see stores/editor.ts — so
+  // this reliably reflects every document's real length, not just whichever
+  // one has been opened so far.
+  const allSinglePage = $derived($editorStore.documents.every((d) => d.pageCount === 1));
 
   const POSITIONS: WatermarkPosition[] = [
     'top-left',
@@ -88,6 +98,45 @@
       editorStore.placeSignature(placement);
     } finally {
       applyingLastPosition = false;
+    }
+  }
+
+  // Applies the current placement's ratio to page 1 of every uploaded
+  // document, so one signature placement can be affixed across a whole
+  // batch of single-page PDFs at once. A document's real page count isn't
+  // known until it's actually been opened (pageCount defaults to 1 until
+  // then), so every document is loaded and checked here rather than trusting
+  // the store's possibly-stale pageCount.
+  async function applyToAllDocuments() {
+    const ratio = $lastPlacement;
+    const documents = $editorStore.documents;
+    if (!ratio) return;
+
+    applyingToAll = true;
+    applyToAllError = null;
+    try {
+      const pdfDocs = await Promise.all(documents.map((doc) => getCachedPdf(doc.id, doc.file)));
+      const multiPage = documents.filter((_, i) => pdfDocs[i].numPages > 1).map((doc) => doc.file.name);
+
+      if (multiPage.length > 0) {
+        applyToAllError = `Skipped — not single-page: ${multiPage.join(', ')}`;
+        return;
+      }
+
+      for (let i = 0; i < documents.length; i++) {
+        const placement = await placementFromRatioForDocument(
+          pdfDocs[i],
+          1,
+          $editorStore.renderScale,
+          documents[i].rotation,
+          ratio,
+        );
+        editorStore.setPlacementForDocument(documents[i].id, placement);
+      }
+    } catch (e) {
+      applyToAllError = e instanceof Error ? e.message : 'Failed to apply to all documents';
+    } finally {
+      applyingToAll = false;
     }
   }
 </script>
@@ -132,6 +181,27 @@
       </button>
     {/if}
 
+    {#if $editorStore.documents.length > 1}
+      <div class="mt-3">
+        {#if $lastPlacement}
+          <button
+            type="button"
+            class="w-full rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium
+              text-blue-600 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50
+              dark:border-blue-700 dark:bg-blue-950 dark:text-blue-400 dark:hover:bg-blue-900"
+            disabled={applyingToAll || !allSinglePage}
+            onclick={applyToAllDocuments}
+          >
+            {applyingToAll ? 'Applying…' : `Apply to All ${$editorStore.documents.length} Documents`}
+          </button>
+        {/if}
+        <p class="mt-1 text-xs text-neutral-400">Only works if every uploaded PDF is a single page.</p>
+        {#if applyToAllError}
+          <p class="mt-1 text-xs text-red-600 dark:text-red-400">{applyToAllError}</p>
+        {/if}
+      </div>
+    {/if}
+
     <div class="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800">
       <label for="watermark-text" class="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">
         Watermark text
@@ -152,7 +222,7 @@
       </label>
 
       <p class="mb-1 mt-3 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Watermark position</p>
-      <div class="grid w-16 grid-cols-3 gap-1">
+      <div class="mx-auto grid w-16 grid-cols-3 gap-1">
         {#each POSITIONS as pos}
           <button
             type="button"
@@ -167,10 +237,7 @@
         {/each}
       </div>
 
-      <div class="mb-1 mt-3 flex items-center justify-between">
-        <p class="text-xs font-medium text-neutral-500 dark:text-neutral-400">Watermark size</p>
-        <span class="text-xs tabular-nums text-neutral-400">{Math.round($watermarkFontScale * 100)}%</span>
-      </div>
+      <p class="mb-1 mt-3 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Watermark size</p>
       <input
         type="range"
         min={WATERMARK_FONT_SCALE_MIN}
@@ -179,6 +246,19 @@
         bind:value={$watermarkFontScale}
         class="w-full accent-blue-600"
       />
+
+      <div class="mb-1 mt-3 flex items-center justify-between">
+        <label for="watermark-color" class="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+          Watermark color
+        </label>
+        <input
+          id="watermark-color"
+          type="color"
+          bind:value={$watermarkColor}
+          class="h-6 w-8 cursor-pointer rounded border border-neutral-300 bg-transparent p-0
+            dark:border-neutral-600"
+        />
+      </div>
 
       <p class="mt-2 text-xs text-neutral-400">Stamped onto the signature when you export.</p>
     </div>

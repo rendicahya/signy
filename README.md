@@ -2,8 +2,6 @@
 
 Sign PDF documents with protected handwritten signatures, entirely in your browser.
 
-**Live app:** https://rendicahya.github.io/signy/
-
 No backend, no uploads, no accounts — everything runs client-side and is designed to work fully offline once loaded. The app itself says so up front: a "100% local" badge is shown on the landing screen before any file is touched.
 
 ## Stack
@@ -44,9 +42,10 @@ _Last updated: 2026-08-07._
 
 **Multi-PDF support**
 
-- Upload and manage several PDFs in one session; each tracks its own pages, rotation, and signature placement independently (`stores/editor.ts`'s `PdfDocumentState[]`).
+- Upload and manage several PDFs in one session; each tracks its own pages, rotation, and signature placement independently (`stores/editor.ts`'s `PdfDocumentState[]`). Every document's real page count is resolved via pdf.js as soon as it's uploaded — not lazily on first open — so page-count-dependent features work correctly even for documents the user hasn't opened yet.
 - Switch the active document via a dropdown in the bottom toolbar, which also shows a "N / M signed" count and a button to remove the current document (`components/BottomToolbar.svelte`).
 - **Download This PDF** exports just the active document; **Download All (ZIP)** (shown once more than one PDF is uploaded) bundles every document into a single ZIP via JSZip, auto-applying the last-used placement ratio to any document that wasn't manually positioned, and reporting which (if any) had to be skipped for having no placement at all (`lib/pdf/export.ts`, `components/ExportButton.svelte`).
+- **Apply to All Documents** (right sidebar, shown once more than one PDF is uploaded and a placement exists): affixes the current signature placement to page 1 of every uploaded document in one click. Only enabled when every uploaded document is confirmed single-page; a real page-count check also runs at click time as a safety net (`components/SignaturePanel.svelte`).
 - A shared pdf.js document cache (`lib/pdf/docCache.ts`) avoids re-parsing the same PDF for the main viewer and the page-thumbnail sidebar.
 
 **Editor layout**
@@ -72,10 +71,11 @@ _Last updated: 2026-08-07._
 
 - Multi-line custom watermark text (textarea input).
 - Optional "stamp current date & time" checkbox, formatted as `1 Jan 2026, 14:30` (24-hour, `lib/watermark/visible.ts`).
-- 9-position picker (top/center/bottom × left/center/right) for where the text sits on the signature.
+- 9-position picker (top/center/bottom × left/center/right) for where the text sits on the signature, centered in the sidebar.
+- Size slider (6%–24% of the signature image's height), labeled Small/Medium/Large rather than a raw percentage.
 - Live preview of the watermark directly on the placed signature in the editor, using the exact same layout math as the final export.
 - At export, the watermark is flattened into the signature image itself (never drawn on the PDF page directly), for anti-crop/anti-screenshot protection.
-- Watermark text, timestamp checkbox, and position preference are saved in `localStorage` so they persist across sessions (`lib/utils/persist.ts`).
+- Watermark text, timestamp checkbox, position, and size preference are saved in `localStorage` so they persist across sessions (`lib/utils/persist.ts`).
 
 **Deployment**
 
@@ -85,7 +85,6 @@ _Last updated: 2026-08-07._
 ### Not yet implemented
 
 - **Rotate the placed signature itself** (independent of the page rotation above — e.g. angling the signature image within its box).
-- **Snap to page edges** when dragging.
 - **Watermark opacity control** — currently hardcoded at 0.25 in `lib/watermark/visible.ts`.
 - **Invisible watermark** — DWT/DCT-based payload embedding. No code exists for this yet.
 - **Verification page** — a way to check whether a PDF was signed with Signy and read back the watermark payload.

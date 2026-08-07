@@ -4,6 +4,7 @@
 
   const zoomPercent = $derived(Math.round(($editorStore.renderScale / DEFAULT_RENDER_SCALE) * 100));
   const signedCount = $derived($editorStore.documents.filter((d) => d.placedSignature).length);
+  const activeIndex = $derived($editorStore.documents.findIndex((d) => d.id === $activeDocument?.id));
 
   function onSelectChange(e: Event) {
     editorStore.setActiveDocument((e.target as HTMLSelectElement).value);
@@ -21,6 +22,31 @@
   bg-white/90 px-6 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/90">
   <div class="flex min-w-0 items-center gap-2">
     {#if $editorStore.documents.length > 1}
+      <div class="flex items-center gap-1 rounded-lg border border-neutral-200 px-1 py-1 dark:border-neutral-800">
+        <button
+          type="button"
+          aria-label="Previous document"
+          title="Previous document"
+          class="rounded px-1.5 py-0.5 text-sm text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed
+            disabled:opacity-30 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          disabled={activeIndex <= 0}
+          onclick={() => editorStore.prevDocument()}
+        >
+          ‹
+        </button>
+        <button
+          type="button"
+          aria-label="Next document"
+          title="Next document"
+          class="rounded px-1.5 py-0.5 text-sm text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed
+            disabled:opacity-30 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          disabled={activeIndex === -1 || activeIndex >= $editorStore.documents.length - 1}
+          onclick={() => editorStore.nextDocument()}
+        >
+          ›
+        </button>
+      </div>
+
       <select
         aria-label="Select document"
         class="max-w-[10rem] rounded-lg border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700

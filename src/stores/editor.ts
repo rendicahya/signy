@@ -1,4 +1,5 @@
 import { writable, derived } from 'svelte/store';
+import { getCachedPdf } from '../lib/pdf/docCache';
 
 /** Signature instance placed on the page, in canvas pixel coordinates. */
 export interface PlacedSignature {
@@ -95,6 +96,19 @@ function createEditorStore() {
     hasExported: false,
   });
 
+  // A document's real page count isn't known until pdf.js has actually
+  // parsed it — resolve it eagerly for every uploaded document (not just
+  // whichever one is active) so features like "Apply to All Documents" can
+  // reliably tell which documents are single-page without waiting for the
+  // user to have opened each one first.
+  function resolvePageCount(doc: PdfDocumentState) {
+    getCachedPdf(doc.id, doc.file)
+      .then((pdfjsDoc) => setPageCountForDocument(doc.id, pdfjsDoc.numPages))
+      .catch(() => {
+        // Leave pageCount at its default; PDFViewer surfaces the real load error when the document is opened.
+      });
+  }
+
   /** Replaces the whole document list, e.g. the initial upload. */
   function loadPdfs(files: File[]) {
     const documents = files.map(createDocumentState);
@@ -104,18 +118,18 @@ function createEditorStore() {
       renderScale: DEFAULT_RENDER_SCALE,
       hasExported: false,
     });
+    documents.forEach(resolvePageCount);
   }
 
   /** Appends more PDFs to an already-started session. */
   function addPdfs(files: File[]) {
-    update((state) => {
-      const added = files.map(createDocumentState);
-      return {
-        ...state,
-        documents: [...state.documents, ...added],
-        activeId: state.activeId ?? added[0]?.id ?? null,
-      };
-    });
+    const added = files.map(createDocumentState);
+    update((state) => ({
+      ...state,
+      documents: [...state.documents, ...added],
+      activeId: state.activeId ?? added[0]?.id ?? null,
+    }));
+    added.forEach(resolvePageCount);
   }
 
   function removeDocument(id: string) {
@@ -137,8 +151,32 @@ function createEditorStore() {
     update((state) => (state.documents.some((d) => d.id === id) ? { ...state, activeId: id } : state));
   }
 
+  function prevDocument() {
+    update((state) => {
+      const index = state.documents.findIndex((d) => d.id === state.activeId);
+      if (index <= 0) return state;
+      return { ...state, activeId: state.documents[index - 1].id };
+    });
+  }
+
+  function nextDocument() {
+    update((state) => {
+      const index = state.documents.findIndex((d) => d.id === state.activeId);
+      if (index === -1 || index >= state.documents.length - 1) return state;
+      return { ...state, activeId: state.documents[index + 1].id };
+    });
+  }
+
   function setPageCount(count: number) {
     update((state) => updateActiveDocument(state, (doc) => ({ ...doc, pageCount: Math.max(1, count) })));
+  }
+
+  /** Sets the page count on an arbitrary document, not just the active one. */
+  function setPageCountForDocument(id: string, count: number) {
+    update((state) => ({
+      ...state,
+      documents: state.documents.map((doc) => (doc.id === id ? { ...doc, pageCount: Math.max(1, count) } : doc)),
+    }));
   }
 
   function goToPage(page: number) {
@@ -176,6 +214,14 @@ function createEditorStore() {
         placedSignature: doc.placedSignature ? { ...doc.placedSignature, ...partial } : null,
       })),
     );
+  }
+
+  /** Sets a placement on an arbitrary document, not just the active one — used to apply one signature to every uploaded document at once. */
+  function setPlacementForDocument(id: string, placement: PlacedSignature | null) {
+    update((state) => ({
+      ...state,
+      documents: state.documents.map((doc) => (doc.id === id ? { ...doc, placedSignature: placement } : doc)),
+    }));
   }
 
   function setRenderScale(nextScale: number) {
@@ -229,12 +275,16 @@ function createEditorStore() {
     addPdfs,
     removeDocument,
     setActiveDocument,
+    prevDocument,
+    nextDocument,
     setPageCount,
+    setPageCountForDocument,
     goToPage,
     nextPage,
     prevPage,
     placeSignature,
     updatePlacement,
+    setPlacementForDocument,
     setRenderScale,
     zoomIn,
     zoomOut,

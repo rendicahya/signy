@@ -1,7 +1,13 @@
 <script lang="ts">
   import { editorStore, activeDocument } from '../stores/editor';
   import { signatureStore } from '../stores/signature';
-  import { watermarkText, includeTimestamp, watermarkPosition, watermarkFontScale } from '../stores/watermark';
+  import {
+    watermarkText,
+    includeTimestamp,
+    watermarkPosition,
+    watermarkFontScale,
+    watermarkColor,
+  } from '../stores/watermark';
   import { lastPlacement } from '../stores/placement';
   import { exportSignedPdf, downloadSignedPdf, exportAllAsZip, downloadZip, resolvePlacement } from '../lib/pdf/export';
 
@@ -15,6 +21,7 @@
       includeTimestamp: $includeTimestamp,
       position: $watermarkPosition,
       fontScale: $watermarkFontScale,
+      color: $watermarkColor,
     };
   }
 

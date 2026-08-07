@@ -33,3 +33,6 @@ export const watermarkFontScale = persistedWritable<number>('watermarkFontScale'
 export const WATERMARK_FONT_SCALE_MIN = 0.06;
 export const WATERMARK_FONT_SCALE_MAX = 0.24;
 export const WATERMARK_FONT_SCALE_STEP = 0.01;
+
+/** Watermark text color, as a CSS hex string. */
+export const watermarkColor = persistedWritable<string>('watermarkColor', '#000000');
