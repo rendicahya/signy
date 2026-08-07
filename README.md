@@ -61,7 +61,7 @@ _Last updated: 2026-08-07._
 **Placing the signature**
 
 - Drag the signature from the sidebar onto the document; drop position is calculated from the cursor. Click-to-place fallback for non-drag interactions.
-- Move a placed signature by dragging it; resize via a corner handle, with aspect ratio always locked to the original image (`lib/signature/layout.ts`).
+- Move a placed signature by dragging it; resize via a corner handle, with aspect ratio always locked to the original image (`lib/signature/layout.ts`). A small × button on the opposite corner clears the placement outright (`stores/editor.ts`'s `clearPlacement`), without needing to rotate the page or remove/re-add the document.
 - Zoom in / out / reset; every document's placement rescales together to stay in the same spot on the page as you zoom (`stores/editor.ts`).
 - **Use last position**, in the right sidebar: the signature's last placement (position and size, as a ratio of the page dimensions) carries over to the next page or document. Computed via pdf.js viewport math rather than a live canvas rect (`lib/pdf/placement.ts`), so it also works for documents not currently on screen (used for the ZIP bulk-export fallback too).
 - **Rotate the PDF page** 90° at a time — useful for sideways-scanned documents. Applied permanently to the exported file (via pdf-lib's `setRotation`), with the signature position mapped back to the correct PDF coordinates using pdf.js's viewport conversion regardless of rotation (`lib/pdf/loader.ts`, `lib/pdf/export.ts`). Rotating clears that document's placement, since the canvas dimensions change.
@@ -90,7 +90,6 @@ _Last updated: 2026-08-07._
 - **Invisible watermark** — DWT/DCT-based payload embedding. No code exists for this yet.
 - **Verification page** — a way to check whether a PDF was signed with Signy and read back the watermark payload.
 - **One signature placement per PDF.** Each document tracks a single placed signature at a time — no way to sign multiple spots on the same document in one export yet (though different documents in the same session can each have their own placement).
-- **No way to clear a single placement** short of rotating the page or removing/re-adding the document — "Start Over" clears the whole session.
 - **No file size limit on uploads.** Type is validated, but there's still no cap on file size, so an extremely large PDF or image could be dropped without warning.
 - **Signature background removal.** Scanned/photographed signatures often have an off-white background; there's no automatic cleanup.
 - **No offline/PWA support.** Despite "no backend, works entirely offline" being a core principle, there's no service worker yet — the app still requires a network fetch for the very first load.

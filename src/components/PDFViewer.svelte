@@ -243,6 +243,23 @@
         onpointermove={onResizePointerMove}
         onpointerup={onResizePointerUp}
       ></div>
+
+      <button
+        type="button"
+        aria-label="Remove placed signature"
+        title="Remove placed signature"
+        class="absolute -right-1.5 -top-1.5 flex h-5 w-5 touch-none items-center justify-center rounded-full
+          border border-white bg-red-500 text-white shadow transition-colors hover:bg-red-600"
+        onpointerdown={(e) => e.stopPropagation()}
+        onclick={(e) => {
+          e.stopPropagation();
+          editorStore.clearPlacement();
+        }}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="h-3 w-3">
+          <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
     </div>
   {/if}
 </div>

@@ -207,6 +207,10 @@ function createEditorStore() {
     update((state) => updateActiveDocument(state, (doc) => ({ ...doc, placedSignature: placement })));
   }
 
+  function clearPlacement() {
+    update((state) => updateActiveDocument(state, (doc) => ({ ...doc, placedSignature: null })));
+  }
+
   function updatePlacement(partial: Partial<PlacedSignature>) {
     update((state) =>
       updateActiveDocument(state, (doc) => ({
@@ -283,6 +287,7 @@ function createEditorStore() {
     nextPage,
     prevPage,
     placeSignature,
+    clearPlacement,
     updatePlacement,
     setPlacementForDocument,
     setRenderScale,
