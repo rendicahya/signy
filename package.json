@@ -12,9 +12,10 @@
     "deploy": "npm run build && gh-pages -d dist"
   },
   "dependencies": {
-    "pdfjs-dist": "^4.6.82",
+    "idb": "^8.0.0",
+    "jszip": "^3.10.1",
     "pdf-lib": "^1.17.1",
-    "idb": "^8.0.0"
+    "pdfjs-dist": "^4.6.82"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.0",

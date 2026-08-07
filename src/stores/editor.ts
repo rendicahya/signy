@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
 
 /** Signature instance placed on the page, in canvas pixel coordinates. */
 export interface PlacedSignature {
@@ -10,15 +10,24 @@ export interface PlacedSignature {
   page: number;
 }
 
-export interface EditorState {
-  pdfFile: File | null;
+/** Per-document editing state — one entry per uploaded PDF. */
+export interface PdfDocumentState {
+  id: string;
+  file: File;
   pageNumber: number;
   pageCount: number;
   placedSignature: PlacedSignature | null;
-  /** pdf.js render scale for the visible canvas; also used to map placement back to PDF points on export. */
-  renderScale: number;
   /** Additional rotation (0/90/180/270) the user applied on top of the page's own rotation. */
   rotation: number;
+}
+
+export interface EditorState {
+  documents: PdfDocumentState[];
+  activeId: string | null;
+  /** pdf.js render scale for the visible canvas; shared across documents so switching between them keeps the same zoom level. */
+  renderScale: number;
+  /** Whether at least one PDF has been downloaded this session — used to warn before a "Start Over" that would discard undownloaded work. */
+  hasExported: boolean;
 }
 
 export const DEFAULT_RENDER_SCALE = 1.5;
@@ -30,71 +39,143 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function createDocumentState(file: File): PdfDocumentState {
+  return {
+    id: crypto.randomUUID(),
+    file,
+    pageNumber: 1,
+    pageCount: 1,
+    placedSignature: null,
+    rotation: 0,
+  };
+}
+
+export function getActiveDocument(state: EditorState): PdfDocumentState | null {
+  return state.documents.find((d) => d.id === state.activeId) ?? null;
+}
+
+/** Applies `fn` to whichever document is currently active; a no-op if none is. */
+function updateActiveDocument(
+  state: EditorState,
+  fn: (doc: PdfDocumentState) => PdfDocumentState,
+): EditorState {
+  if (!state.activeId) return state;
+  return {
+    ...state,
+    documents: state.documents.map((doc) => (doc.id === state.activeId ? fn(doc) : doc)),
+  };
+}
+
 function rescale(state: EditorState, nextScale: number): EditorState {
   const renderScale = clamp(nextScale, MIN_RENDER_SCALE, MAX_RENDER_SCALE);
   const factor = renderScale / state.renderScale;
-  // Rescale the placed signature so it stays over the same spot on the page as we zoom.
-  // Zoom applies uniformly to every page, so this stays correct regardless of which
-  // page the placement belongs to.
-  const placedSignature = state.placedSignature
-    ? {
-        ...state.placedSignature,
-        x: state.placedSignature.x * factor,
-        y: state.placedSignature.y * factor,
-        width: state.placedSignature.width * factor,
-        height: state.placedSignature.height * factor,
-      }
-    : null;
-  return { ...state, renderScale, placedSignature };
+  // Zoom is shared across every document, so a placement on any of them —
+  // not just the active one — needs to be rescaled to stay over the same
+  // spot the next time that document is viewed.
+  const documents = state.documents.map((doc) => ({
+    ...doc,
+    placedSignature: doc.placedSignature
+      ? {
+          ...doc.placedSignature,
+          x: doc.placedSignature.x * factor,
+          y: doc.placedSignature.y * factor,
+          width: doc.placedSignature.width * factor,
+          height: doc.placedSignature.height * factor,
+        }
+      : null,
+  }));
+  return { ...state, renderScale, documents };
 }
 
 function createEditorStore() {
   const { subscribe, update, set } = writable<EditorState>({
-    pdfFile: null,
-    pageNumber: 1,
-    pageCount: 1,
-    placedSignature: null,
+    documents: [],
+    activeId: null,
     renderScale: DEFAULT_RENDER_SCALE,
-    rotation: 0,
+    hasExported: false,
   });
 
-  function loadPdf(file: File) {
+  /** Replaces the whole document list, e.g. the initial upload. */
+  function loadPdfs(files: File[]) {
+    const documents = files.map(createDocumentState);
     set({
-      pdfFile: file,
-      pageNumber: 1,
-      pageCount: 1,
-      placedSignature: null,
+      documents,
+      activeId: documents[0]?.id ?? null,
       renderScale: DEFAULT_RENDER_SCALE,
-      rotation: 0,
+      hasExported: false,
     });
   }
 
-  /** Called once pdf.js has parsed the document and knows how many pages it has. */
+  /** Appends more PDFs to an already-started session. */
+  function addPdfs(files: File[]) {
+    update((state) => {
+      const added = files.map(createDocumentState);
+      return {
+        ...state,
+        documents: [...state.documents, ...added],
+        activeId: state.activeId ?? added[0]?.id ?? null,
+      };
+    });
+  }
+
+  function removeDocument(id: string) {
+    update((state) => {
+      const removedIndex = state.documents.findIndex((d) => d.id === id);
+      if (removedIndex === -1) return state;
+
+      const documents = state.documents.filter((d) => d.id !== id);
+      const activeId =
+        state.activeId === id
+          ? (documents[Math.min(removedIndex, documents.length - 1)]?.id ?? null)
+          : state.activeId;
+
+      return { ...state, documents, activeId };
+    });
+  }
+
+  function setActiveDocument(id: string) {
+    update((state) => (state.documents.some((d) => d.id === id) ? { ...state, activeId: id } : state));
+  }
+
   function setPageCount(count: number) {
-    update((state) => ({ ...state, pageCount: Math.max(1, count) }));
+    update((state) => updateActiveDocument(state, (doc) => ({ ...doc, pageCount: Math.max(1, count) })));
   }
 
   function goToPage(page: number) {
-    update((state) => ({ ...state, pageNumber: clamp(page, 1, state.pageCount) }));
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({ ...doc, pageNumber: clamp(page, 1, doc.pageCount) })),
+    );
   }
 
   function nextPage() {
-    update((state) => ({ ...state, pageNumber: clamp(state.pageNumber + 1, 1, state.pageCount) }));
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        pageNumber: clamp(doc.pageNumber + 1, 1, doc.pageCount),
+      })),
+    );
   }
 
   function prevPage() {
-    update((state) => ({ ...state, pageNumber: clamp(state.pageNumber - 1, 1, state.pageCount) }));
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        pageNumber: clamp(doc.pageNumber - 1, 1, doc.pageCount),
+      })),
+    );
   }
 
   function placeSignature(placement: PlacedSignature) {
-    update((state) => ({ ...state, placedSignature: placement }));
+    update((state) => updateActiveDocument(state, (doc) => ({ ...doc, placedSignature: placement })));
   }
 
   function updatePlacement(partial: Partial<PlacedSignature>) {
-    update((state) => ({
-      ...state,
-      placedSignature: state.placedSignature ? { ...state.placedSignature, ...partial } : null,
-    }));
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        placedSignature: doc.placedSignature ? { ...doc.placedSignature, ...partial } : null,
+      })),
+    );
   }
 
   function setRenderScale(nextScale: number) {
@@ -114,14 +195,16 @@ function createEditorStore() {
   }
 
   function rotateBy(delta: number) {
-    update((state) => ({
-      ...state,
-      rotation: ((state.rotation + delta) % 360 + 360) % 360,
-      // Rotation applies uniformly to every page, so any existing placement —
-      // regardless of which page it's on — would misalign the next time its
-      // page is rendered. Clear it; "Use last position" makes re-placing fast.
-      placedSignature: null,
-    }));
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        rotation: (((doc.rotation + delta) % 360) + 360) % 360,
+        // Rotation applies uniformly to every page of this document, so any
+        // existing placement would misalign the next time its page is
+        // rendered. Clear it; "Use last position" makes re-placing fast.
+        placedSignature: null,
+      })),
+    );
   }
 
   function rotateLeft() {
@@ -132,20 +215,20 @@ function createEditorStore() {
     rotateBy(90);
   }
 
+  function markExported() {
+    update((state) => ({ ...state, hasExported: true }));
+  }
+
   function reset() {
-    set({
-      pdfFile: null,
-      pageNumber: 1,
-      pageCount: 1,
-      placedSignature: null,
-      renderScale: DEFAULT_RENDER_SCALE,
-      rotation: 0,
-    });
+    set({ documents: [], activeId: null, renderScale: DEFAULT_RENDER_SCALE, hasExported: false });
   }
 
   return {
     subscribe,
-    loadPdf,
+    loadPdfs,
+    addPdfs,
+    removeDocument,
+    setActiveDocument,
     setPageCount,
     goToPage,
     nextPage,
@@ -158,8 +241,12 @@ function createEditorStore() {
     resetZoom,
     rotateLeft,
     rotateRight,
+    markExported,
     reset,
   };
 }
 
 export const editorStore = createEditorStore();
+
+/** The document currently shown in the editor, if any. */
+export const activeDocument = derived(editorStore, getActiveDocument);

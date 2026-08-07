@@ -10,6 +10,11 @@
     await signatureStore.upload(file);
   }
 
+  async function onFiles(files: File[]) {
+    const file = files[0];
+    if (file) await onFile(file);
+  }
+
   async function onDelete() {
     await signatureStore.remove();
   }
@@ -50,5 +55,5 @@
     {/if}
   </div>
 {:else}
-  <UploadCard title="Upload Signature" accept="image/*" errorMessage="Please upload an image file." onFile={onFile} />
+  <UploadCard title="Upload Signature" accept="image/*" errorMessage="Please upload an image file." onFiles={onFiles} />
 {/if}

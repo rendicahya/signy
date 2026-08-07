@@ -1,22 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { loadPdf, renderPageToCanvas, type PdfDocument } from '../lib/pdf/loader';
-  import { editorStore, type PlacedSignature } from '../stores/editor';
+  import { renderPageToCanvas, type PdfDocument } from '../lib/pdf/loader';
+  import { getCachedPdf } from '../lib/pdf/docCache';
+  import { editorStore, activeDocument, type PlacedSignature } from '../stores/editor';
   import { signatureStore } from '../stores/signature';
   import { watermarkText, includeTimestamp, watermarkPosition, type WatermarkPosition } from '../stores/watermark';
-  import { lastPlacement, type PlacementRatio } from '../stores/placement';
+  import { lastPlacement } from '../stores/placement';
   import { fitWithinBox } from '../lib/signature/layout';
   import { buildWatermarkLines } from '../lib/watermark/visible';
 
-  interface Props {
-    file: File;
-  }
-
-  let { file }: Props = $props();
-
   let canvasEl: HTMLCanvasElement;
   let wrapperEl: HTMLDivElement;
-  let doc: PdfDocument | null = $state(null);
+  let pdfDoc: PdfDocument | null = $state(null);
   let error: string | null = $state(null);
   let isDragOver = $state(false);
 
@@ -35,10 +30,14 @@
 
   const previewAlign = $derived(positionToFlex($watermarkPosition));
 
+  // This component is remounted (via a #key block in App.svelte) whenever
+  // the active document changes, so `onMount` always loads the right file.
   async function loadDocument() {
+    const doc = $activeDocument;
+    if (!doc) return;
     try {
-      doc = await loadPdf(file);
-      editorStore.setPageCount(doc.numPages);
+      pdfDoc = await getCachedPdf(doc.id, doc.file);
+      editorStore.setPageCount(pdfDoc.numPages);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load PDF';
     }
@@ -48,21 +47,20 @@
 
   // Re-render the current page whenever the page number, zoom level, rotation, or the document changes.
   $effect(() => {
-    const pageNumber = $editorStore.pageNumber;
+    const doc = $activeDocument;
     const scale = $editorStore.renderScale;
-    const rotation = $editorStore.rotation;
-    if (!doc || !canvasEl) return;
-    renderPageToCanvas(doc, pageNumber, canvasEl, scale, rotation).catch((e) => {
+    if (!doc || !pdfDoc || !canvasEl) return;
+    renderPageToCanvas(pdfDoc, doc.pageNumber, canvasEl, scale, doc.rotation).catch((e) => {
       error = e instanceof Error ? e.message : 'Failed to render PDF';
     });
   });
 
   // Only show a placement (or the placed-signature overlay) when we're looking at its own page.
-  const placementOnCurrentPage = $derived(
-    $editorStore.placedSignature && $editorStore.placedSignature.page === $editorStore.pageNumber
-      ? $editorStore.placedSignature
-      : null,
-  );
+  const placementOnCurrentPage = $derived.by(() => {
+    const doc = $activeDocument;
+    if (!doc?.placedSignature) return null;
+    return doc.placedSignature.page === doc.pageNumber ? doc.placedSignature : null;
+  });
 
   function clamp(value: number, min: number, max: number): number {
     return Math.min(Math.max(value, min), max);
@@ -80,25 +78,6 @@
     });
   }
 
-  function placementFromRatio(ratio: PlacementRatio): PlacedSignature {
-    const rect = canvasEl.getBoundingClientRect();
-    const width = ratio.widthRatio * rect.width;
-    const height = ratio.heightRatio * rect.height;
-    return {
-      width,
-      height,
-      x: clamp(ratio.xRatio * rect.width, 0, rect.width - width),
-      y: clamp(ratio.yRatio * rect.height, 0, rect.height - height),
-      page: $editorStore.pageNumber,
-    };
-  }
-
-  function useLastPosition() {
-    const ratio = $lastPlacement;
-    if (!ratio) return;
-    editorStore.placeSignature(placementFromRatio(ratio));
-  }
-
   function onDragOver(e: DragEvent) {
     e.preventDefault();
     isDragOver = true;
@@ -108,6 +87,9 @@
     e.preventDefault();
     isDragOver = false;
 
+    const doc = $activeDocument;
+    if (!doc) return;
+
     const sig = $signatureStore;
     const { width, height } = fitWithinBox(sig.naturalWidth, sig.naturalHeight);
 
@@ -115,7 +97,7 @@
     const x = clamp(e.clientX - rect.left - width / 2, 0, rect.width - width);
     const y = clamp(e.clientY - rect.top - height / 2, 0, rect.height - height);
 
-    const placement = { x, y, width, height, page: $editorStore.pageNumber };
+    const placement = { x, y, width, height, page: doc.pageNumber };
     editorStore.placeSignature(placement);
     rememberPlacement(placement);
   }
@@ -135,7 +117,7 @@
 
   function onOverlayPointerMove(e: PointerEvent) {
     if (!moving) return;
-    const placement = $editorStore.placedSignature;
+    const placement = $activeDocument?.placedSignature;
     if (!placement) return;
     const rect = canvasEl.getBoundingClientRect();
     const x = clamp(e.clientX - rect.left - moveOffset.x, 0, rect.width - placement.width);
@@ -145,7 +127,7 @@
 
   function onOverlayPointerUp() {
     moving = false;
-    const placement = $editorStore.placedSignature;
+    const placement = $activeDocument?.placedSignature;
     if (placement) rememberPlacement(placement);
   }
 
@@ -156,7 +138,7 @@
 
   function onResizePointerDown(e: PointerEvent) {
     e.stopPropagation();
-    const placement = $editorStore.placedSignature;
+    const placement = $activeDocument?.placedSignature;
     if (!placement) return;
     resizing = true;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -190,7 +172,7 @@
     resizing = false;
     resizeStart = null;
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    const placement = $editorStore.placedSignature;
+    const placement = $activeDocument?.placedSignature;
     if (placement) rememberPlacement(placement);
   }
 </script>
@@ -204,23 +186,6 @@
   ondragleave={() => (isDragOver = false)}
   ondrop={onDrop}
 >
-  {#if !placementOnCurrentPage && $lastPlacement && $signatureStore.previewUrl}
-    <!-- Placed before the canvas so its static (pre-sticky) position starts at the top of the
-         page; height:0 keeps it from pushing the canvas down, and sticky pins it below the
-         toolbar while scrolling instead of scrolling away with the page. -->
-    <div class="sticky top-20 z-10 flex items-start justify-center overflow-visible" style="height: 0;">
-      <button
-        type="button"
-        class="rounded-full border border-blue-300 bg-white/95 px-4 py-1.5 text-sm
-          font-medium text-blue-600 shadow-lg backdrop-blur transition-colors hover:bg-blue-50
-          dark:border-blue-700 dark:bg-neutral-900/95 dark:text-blue-400 dark:hover:bg-neutral-800"
-        onclick={useLastPosition}
-      >
-        Use last position
-      </button>
-    </div>
-  {/if}
-
   <canvas bind:this={canvasEl} class="rounded-lg shadow-lg"></canvas>
 
   {#if error}

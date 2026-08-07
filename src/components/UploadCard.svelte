@@ -5,17 +5,20 @@
     title: string;
     subtitle?: string;
     accept?: string;
+    /** Allow selecting/dropping more than one file at once. */
+    multiple?: boolean;
     /** Shown when a rejected file is dropped or picked. */
     errorMessage?: string;
-    onFile: (file: File) => void;
+    onFiles: (files: File[]) => void;
   }
 
   let {
     title,
     subtitle = 'Drag & drop or click to browse',
     accept = '',
+    multiple = false,
     errorMessage = 'That file type is not supported.',
-    onFile,
+    onFiles,
   }: Props = $props();
 
   let isDragging = $state(false);
@@ -23,16 +26,17 @@
   let inputEl: HTMLInputElement;
 
   function handleFiles(files: FileList | null) {
-    const file = files?.[0];
-    if (!file) return;
+    const candidates = multiple ? Array.from(files ?? []) : Array.from(files ?? []).slice(0, 1);
+    if (candidates.length === 0) return;
 
-    if (!isFileAccepted(file, accept)) {
+    const accepted = candidates.filter((file) => isFileAccepted(file, accept));
+    if (accepted.length === 0) {
       error = errorMessage;
       return;
     }
 
     error = null;
-    onFile(file);
+    onFiles(accepted);
   }
 
   function onDrop(e: DragEvent) {
@@ -66,6 +70,7 @@
   bind:this={inputEl}
   type="file"
   {accept}
+  {multiple}
   class="hidden"
   onchange={(e) => {
     handleFiles((e.target as HTMLInputElement).files);

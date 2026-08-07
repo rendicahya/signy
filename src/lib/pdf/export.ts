@@ -1,7 +1,10 @@
 import { PDFDocument, degrees } from 'pdf-lib';
+import JSZip from 'jszip';
 import { loadPdf, getTotalRotation } from './loader';
+import { placementFromRatioForDocument } from './placement';
 import { applyVisibleWatermark, type WatermarkOptions } from '../watermark/visible';
-import type { PlacedSignature } from '../../stores/editor';
+import type { PdfDocumentState, PlacedSignature } from '../../stores/editor';
+import type { PlacementRatio } from '../../stores/placement';
 
 export interface ExportParams {
   pdfFile: File;
@@ -71,15 +74,99 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
   return pdfDoc.save();
 }
 
-export function downloadSignedPdf(bytes: Uint8Array, originalFileName: string): void {
+export function signedFileName(originalFileName: string): string {
   const base = originalFileName.replace(/\.pdf$/i, '');
-  const blob = new Blob([bytes], { type: 'application/pdf' });
+  return `${base}_signed.pdf`;
+}
+
+function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${base}_signed.pdf`;
+  a.download = fileName;
   a.click();
 
   URL.revokeObjectURL(url);
+}
+
+export function downloadSignedPdf(bytes: Uint8Array, originalFileName: string): void {
+  downloadBlob(new Blob([bytes], { type: 'application/pdf' }), signedFileName(originalFileName));
+}
+
+export function downloadZip(blob: Blob): void {
+  downloadBlob(blob, `signy_signed_pdfs.zip`);
+}
+
+/**
+ * Resolves what placement to use for a document: its own manual placement if
+ * the user positioned one, otherwise the last-used ratio applied to page 1 —
+ * matching the "Use last position" shortcut in the editor. Returns null if
+ * neither is available, meaning this document should be skipped.
+ */
+export async function resolvePlacement(
+  doc: PdfDocumentState,
+  renderScale: number,
+  lastPlacementRatio: PlacementRatio | null,
+): Promise<PlacedSignature | null> {
+  if (doc.placedSignature) return doc.placedSignature;
+  if (!lastPlacementRatio) return null;
+
+  const pdfjsDoc = await loadPdf(doc.file);
+  return placementFromRatioForDocument(pdfjsDoc, 1, renderScale, doc.rotation, lastPlacementRatio);
+}
+
+export interface BulkExportResult {
+  zipBlob: Blob;
+  exportedCount: number;
+  /** File names of documents that had no placement available and were left out of the ZIP. */
+  skipped: string[];
+}
+
+/**
+ * Exports every document that has a resolvable placement into a single ZIP.
+ * Documents with neither a manual placement nor a remembered ratio are
+ * skipped and reported back so the caller can tell the user.
+ */
+export async function exportAllAsZip(
+  documents: PdfDocumentState[],
+  signatureBlob: Blob,
+  renderScale: number,
+  lastPlacementRatio: PlacementRatio | null,
+  watermark?: WatermarkOptions,
+): Promise<BulkExportResult> {
+  const zip = new JSZip();
+  const skipped: string[] = [];
+  const usedNames = new Set<string>();
+
+  for (const doc of documents) {
+    const placement = await resolvePlacement(doc, renderScale, lastPlacementRatio);
+    if (!placement) {
+      skipped.push(doc.file.name);
+      continue;
+    }
+
+    const bytes = await exportSignedPdf({
+      pdfFile: doc.file,
+      signatureBlob,
+      placement,
+      renderScale,
+      rotation: doc.rotation,
+      watermark,
+    });
+
+    let name = signedFileName(doc.file.name);
+    if (usedNames.has(name)) {
+      const base = name.replace(/\.pdf$/i, '');
+      let suffix = 2;
+      while (usedNames.has(`${base}_${suffix}.pdf`)) suffix++;
+      name = `${base}_${suffix}.pdf`;
+    }
+    usedNames.add(name);
+
+    zip.file(name, bytes);
+  }
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  return { zipBlob, exportedCount: documents.length - skipped.length, skipped };
 }

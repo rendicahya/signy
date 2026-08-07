@@ -4,11 +4,11 @@ Sign PDF documents with protected handwritten signatures, entirely in your brows
 
 **Live app:** https://rendicahya.github.io/signy/
 
-No backend, no uploads, no accounts — everything runs client-side and is designed to work fully offline once loaded.
+No backend, no uploads, no accounts — everything runs client-side and is designed to work fully offline once loaded. The app itself says so up front: a "100% local" badge is shown on the landing screen before any file is touched.
 
 ## Stack
 
-Svelte 5 + Vite + TypeScript, Tailwind CSS, pdf.js, pdf-lib, IndexedDB (via `idb`).
+Svelte 5 + Vite + TypeScript, Tailwind CSS, pdf.js, pdf-lib, IndexedDB (via `idb`), JSZip.
 
 ## Getting started
 
@@ -30,32 +30,43 @@ npm run deploy
 
 Tracks what's actually implemented in the codebase versus what's still on the roadmap.
 
-_Last updated: 2026-08-06._
+_Last updated: 2026-08-07._
 
 ### Implemented
 
-**Upload & storage**
+**Onboarding**
 
-- Upload PDF via drag & drop or click-to-browse (`components/UploadCard.svelte`).
-- Upload signature image via drag & drop or click-to-browse (`components/SignatureUploader.svelte`).
-- File type is validated on both the PDF and signature upload slots — including drag & drop, where the browser's `accept` attribute alone doesn't help (`lib/utils/fileValidation.ts`). A PDF dropped onto the signature slot (or vice versa) is rejected with an inline message instead of silently accepted.
-- Signature persisted locally in IndexedDB (`lib/signature/db.ts`, `stores/signature.ts`) — never localStorage, never uploaded anywhere.
-- Returning users see their saved signature automatically, with Replace and Delete actions.
-- The editor only opens once **both** a PDF and a signature are present — uploading the PDF first no longer skips ahead.
+- Two-step flow: step 1 is upload-PDF only (`components/UploadCard.svelte`, supports selecting/dropping multiple PDFs at once); step 2 shows the uploaded-PDF summary (with per-file remove and "+ Add more") plus the signature step.
+- Step 2 always requires an explicit **Continue to Editor** click before entering the editor — even for returning users whose signature is already saved from IndexedDB — so there's a chance to review or replace the signature before it's applied to a new batch of PDFs (`App.svelte`).
+- Signature upload/replace/delete via drag & drop or click-to-browse (`components/SignatureUploader.svelte`), persisted in IndexedDB (`lib/signature/db.ts`, `stores/signature.ts`) — never localStorage, never uploaded anywhere.
+- File type is validated on both the PDF and signature upload slots — including drag & drop, where the browser's `accept` attribute alone doesn't help (`lib/utils/fileValidation.ts`).
+- A "100% local — your files never leave this device" badge on the landing screen, ahead of any upload.
 
-**Editor**
+**Multi-PDF support**
 
-- PDF rendered client-side with pdf.js (`lib/pdf/loader.ts`).
-- **Multi-page navigation**: Previous/Next controls and a "Page X / Y" indicator in the toolbar (shown once a PDF has more than one page). The signature can be placed on any page — each placement remembers which page it belongs to, is only shown while viewing that page, and export embeds it on that same page while preserving every other page untouched (`stores/editor.ts`, `lib/pdf/export.ts`). Only one signature placement is tracked at a time (see Not yet implemented).
-- Drag the signature from the floating panel onto the document; drop position is calculated from the cursor.
-- Click-to-place fallback for non-drag interactions.
-- Move a placed signature by dragging it.
-- Resize a placed signature via a corner handle, with aspect ratio always locked to the original image (`lib/signature/layout.ts`).
-- Zoom in / out / reset controls in the toolbar; the placed signature rescales to stay in the same spot on the page as you zoom (`stores/editor.ts`).
-- Toolbar stays fixed (sticky) at the top while scrolling.
-- **Use last position**: the signature's placement (position and size) is remembered as a ratio of the page dimensions, so it carries over to the next document. A "Use last position" button appears over the page when a saved placement exists and nothing has been placed yet (`stores/placement.ts`).
-- **Rotate the PDF page** 90° at a time from the toolbar — useful for sideways-scanned documents. The rotation is applied permanently to the exported file (via pdf-lib's `setRotation`), and the signature position is mapped back to the correct PDF coordinates using pdf.js's viewport conversion regardless of rotation (`lib/pdf/loader.ts`, `lib/pdf/export.ts`). Rotating clears any already-placed signature, since the canvas dimensions change; use "Use last position" to quickly re-place it.
+- Upload and manage several PDFs in one session; each tracks its own pages, rotation, and signature placement independently (`stores/editor.ts`'s `PdfDocumentState[]`).
+- Switch the active document via a dropdown in the bottom toolbar, which also shows a "N / M signed" count and a button to remove the current document (`components/BottomToolbar.svelte`).
+- **Download This PDF** exports just the active document; **Download All (ZIP)** (shown once more than one PDF is uploaded) bundles every document into a single ZIP via JSZip, auto-applying the last-used placement ratio to any document that wasn't manually positioned, and reporting which (if any) had to be skipped for having no placement at all (`lib/pdf/export.ts`, `components/ExportButton.svelte`).
+- A shared pdf.js document cache (`lib/pdf/docCache.ts`) avoids re-parsing the same PDF for the main viewer and the page-thumbnail sidebar.
+
+**Editor layout**
+
+- Three-column layout: a collapsible left sidebar of page thumbnails, the center PDF viewer with a sticky bottom toolbar, and a right sidebar for the signature panel and downloads.
+- **Left sidebar** (`components/PageSidebar.svelte`, `components/PageThumbnail.svelte`): thumbnails of every page in the active document; click one to jump to that page. Toggled via a button in the top toolbar (`stores/layout.ts`).
+- **Top toolbar** (`components/Toolbar.svelte`): sidebar toggle, enlarged "Signy" branding, and the Previous/Next page controls with a "Page X / Y" indicator (shown once the active document has more than one page).
+- **Bottom toolbar** (`components/BottomToolbar.svelte`, sticky): the document-selector dropdown (multi-PDF only), zoom in/out/reset, and rotate left/right.
+- **Right sidebar**: the signature preview/drag source, a **Replace Signature** link (works mid-session, not just during onboarding), watermark controls, a **Start Over** button, and the download button(s).
+- App background is a subtle gray (`bg-neutral-100` / `dark:bg-neutral-950`) so the white PDF page visually stands out from the surrounding chrome.
 - Dark mode toggle (`components/ThemeToggle.svelte`, `stores/theme.ts`): defaults to the OS's `prefers-color-scheme`, can be switched manually, and the choice is persisted in `localStorage`.
+
+**Placing the signature**
+
+- Drag the signature from the sidebar onto the document; drop position is calculated from the cursor. Click-to-place fallback for non-drag interactions.
+- Move a placed signature by dragging it; resize via a corner handle, with aspect ratio always locked to the original image (`lib/signature/layout.ts`).
+- Zoom in / out / reset; every document's placement rescales together to stay in the same spot on the page as you zoom (`stores/editor.ts`).
+- **Use last position**, in the right sidebar: the signature's last placement (position and size, as a ratio of the page dimensions) carries over to the next page or document. Computed via pdf.js viewport math rather than a live canvas rect (`lib/pdf/placement.ts`), so it also works for documents not currently on screen (used for the ZIP bulk-export fallback too).
+- **Rotate the PDF page** 90° at a time — useful for sideways-scanned documents. Applied permanently to the exported file (via pdf-lib's `setRotation`), with the signature position mapped back to the correct PDF coordinates using pdf.js's viewport conversion regardless of rotation (`lib/pdf/loader.ts`, `lib/pdf/export.ts`). Rotating clears that document's placement, since the canvas dimensions change.
+- **Start Over** (right sidebar, above the download buttons) resets the whole session. If nothing has been downloaded yet, a confirmation dialog warns that uploaded PDFs and placements will be discarded (`stores/editor.ts`'s `hasExported` flag, `components/StartOverButton.svelte`).
 
 **Visible watermark**
 
@@ -65,11 +76,6 @@ _Last updated: 2026-08-06._
 - Live preview of the watermark directly on the placed signature in the editor, using the exact same layout math as the final export.
 - At export, the watermark is flattened into the signature image itself (never drawn on the PDF page directly), for anti-crop/anti-screenshot protection.
 - Watermark text, timestamp checkbox, and position preference are saved in `localStorage` so they persist across sessions (`lib/utils/persist.ts`).
-
-**Export**
-
-- Exports a signed PDF via pdf-lib, embedding the watermarked signature at the placed position (`lib/pdf/export.ts`).
-- Downloads as `original_filename_signed.pdf`.
 
 **Deployment**
 
@@ -83,9 +89,9 @@ _Last updated: 2026-08-06._
 - **Watermark opacity control** — currently hardcoded at 0.25 in `lib/watermark/visible.ts`.
 - **Invisible watermark** — DWT/DCT-based payload embedding. No code exists for this yet.
 - **Verification page** — a way to check whether a PDF was signed with Signy and read back the watermark payload.
-- **Single signature placement.** Only one placed signature is tracked at a time (even across pages) — there's no way to sign multiple spots or multiple pages in one export yet.
-- **No way to remove a placed signature** without resetting the whole session (the "Start Over" button clears the PDF too).
-- **No file size limit on uploads.** Type is now validated, but there's still no cap on file size, so an extremely large PDF or image could be dropped without warning.
+- **One signature placement per PDF.** Each document tracks a single placed signature at a time — no way to sign multiple spots on the same document in one export yet (though different documents in the same session can each have their own placement).
+- **No way to clear a single placement** short of rotating the page or removing/re-adding the document — "Start Over" clears the whole session.
+- **No file size limit on uploads.** Type is validated, but there's still no cap on file size, so an extremely large PDF or image could be dropped without warning.
 - **Signature background removal.** Scanned/photographed signatures often have an off-white background; there's no automatic cleanup.
 - **No offline/PWA support.** Despite "no backend, works entirely offline" being a core principle, there's no service worker yet — the app still requires a network fetch for the very first load.
 - **No automated tests.** In particular, the pixel-to-PDF-point coordinate mapping in `lib/pdf/export.ts` and the resize/zoom rescaling logic in `stores/editor.ts` are easy to get subtly wrong and aren't covered by any tests.
