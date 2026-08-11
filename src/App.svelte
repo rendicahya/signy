@@ -9,6 +9,7 @@
   import ExportButton from './components/ExportButton.svelte';
   import StartOverButton from './components/StartOverButton.svelte';
   import ThemeToggle from './components/ThemeToggle.svelte';
+  import UpdateToast from './components/UpdateToast.svelte';
   import { editorStore, activeDocument } from './stores/editor';
   import { signatureStore } from './stores/signature';
   import { theme } from './stores/theme';
@@ -134,6 +135,8 @@
   ondragleave={onPageDragLeave}
   ondrop={onPageDrop}
 >
+  <UpdateToast />
+
   {#if isPageDragging}
     <div class="pointer-events-none fixed inset-4 z-50 flex items-center justify-center rounded-3xl border-4
       border-dashed border-blue-500 bg-blue-50/80 backdrop-blur-sm dark:bg-blue-950/80">

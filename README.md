@@ -86,6 +86,7 @@ _Last updated: 2026-08-07._
 
 - Vite config sets the correct `base` path for GitHub Pages (`vite.config.ts`).
 - `npm run deploy` script using `gh-pages`.
+- **Offline-ready (PWA).** A service worker (`vite-plugin-pwa`, configured in `vite.config.ts`) precaches the app shell — including the ~1.3 MB pdf.js worker — so repeat visits load instantly, even offline. It never swaps itself in automatically: `registerType: 'prompt'` means a newly deployed version sits in the background until the user clicks **Reload to update** on the toast shown by `components/UpdateToast.svelte`, so a signature placement mid-session is never interrupted by a surprise reload.
 
 ### Not yet implemented
 
@@ -94,5 +95,4 @@ _Last updated: 2026-08-07._
 - **Verification page** — a way to check whether a PDF was signed with Signy and read back the watermark payload.
 - **One signature placement per PDF.** Each document tracks a single placed signature at a time — no way to sign multiple spots on the same document in one export yet (though different documents in the same session can each have their own placement).
 - **Signature background removal.** Scanned/photographed signatures often have an off-white background; there's no automatic cleanup.
-- **No offline/PWA support.** Despite "no backend, works entirely offline" being a core principle, there's no service worker yet — the app still requires a network fetch for the very first load.
 - **No automated tests.** In particular, the pixel-to-PDF-point coordinate mapping in `lib/pdf/export.ts` and the resize/zoom rescaling logic in `stores/editor.ts` are easy to get subtly wrong and aren't covered by any tests.
