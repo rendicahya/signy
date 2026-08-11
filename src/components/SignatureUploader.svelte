@@ -1,7 +1,7 @@
 <script lang="ts">
   import UploadCard from './UploadCard.svelte';
   import { signatureStore } from '../stores/signature';
-  import { isFileAccepted } from '../lib/utils/fileValidation';
+  import { isFileAccepted, formatFileSize, MAX_SIGNATURE_SIZE_BYTES } from '../lib/utils/fileValidation';
 
   const state = $derived($signatureStore);
   let replaceError: string | null = $state(null);
@@ -30,6 +30,11 @@
       return;
     }
 
+    if (file.size > MAX_SIGNATURE_SIZE_BYTES) {
+      replaceError = `"${file.name}" is ${formatFileSize(file.size)} — the limit is ${formatFileSize(MAX_SIGNATURE_SIZE_BYTES)}.`;
+      return;
+    }
+
     replaceError = null;
     await onFile(file);
   }
@@ -55,5 +60,11 @@
     {/if}
   </div>
 {:else}
-  <UploadCard title="Upload Signature" accept="image/*" errorMessage="Please upload an image file." onFiles={onFiles} />
+  <UploadCard
+    title="Upload Signature"
+    accept="image/*"
+    errorMessage="Please upload an image file."
+    maxSizeBytes={MAX_SIGNATURE_SIZE_BYTES}
+    onFiles={onFiles}
+  />
 {/if}

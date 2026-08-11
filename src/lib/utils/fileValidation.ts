@@ -25,3 +25,20 @@ export function isFileAccepted(file: File, accept: string): boolean {
     return file.type === pattern;
   });
 }
+
+export const MAX_PDF_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+export const MAX_SIGNATURE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/** Formats a byte count as a short human-readable size, e.g. "12.3 MB". */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unitIndex]}`;
+}

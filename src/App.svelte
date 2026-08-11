@@ -13,10 +13,14 @@
   import { signatureStore } from './stores/signature';
   import { theme } from './stores/theme';
   import { pageSidebarOpen, togglePageSidebar } from './stores/layout';
-  import { isFileAccepted } from './lib/utils/fileValidation';
+  import { isFileAccepted, formatFileSize, MAX_PDF_SIZE_BYTES } from './lib/utils/fileValidation';
   import { clearCachedPdf } from './lib/pdf/docCache';
 
   const PDF_ACCEPT = 'application/pdf,.pdf';
+
+  let addPdfsError: string | null = $state(null);
+  let isPageDragging = $state(false);
+  let pageDragDepth = 0;
 
   const editor = $derived($editorStore);
   const active = $derived($activeDocument);
@@ -43,14 +47,75 @@
 
   function onAddMorePdfs(e: Event) {
     const input = e.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []).filter((f) => isFileAccepted(f, PDF_ACCEPT));
+    const typeOk = Array.from(input.files ?? []).filter((f) => isFileAccepted(f, PDF_ACCEPT));
     input.value = '';
-    if (files.length > 0) editorStore.addPdfs(files);
+
+    const tooLarge = typeOk.filter((f) => f.size > MAX_PDF_SIZE_BYTES);
+    const sized = typeOk.filter((f) => f.size <= MAX_PDF_SIZE_BYTES);
+
+    addPdfsError =
+      tooLarge.length > 0
+        ? `Skipped (over ${formatFileSize(MAX_PDF_SIZE_BYTES)}): ${tooLarge.map((f) => f.name).join(', ')}`
+        : null;
+
+    if (sized.length > 0) editorStore.addPdfs(sized);
   }
 
   function removeDocument(id: string) {
     clearCachedPdf(id);
     editorStore.removeDocument(id);
+  }
+
+  // Lets PDFs be dropped anywhere on the pre-editor screens, not just onto
+  // the upload card — dragenter/dragleave bubble from every descendant, so a
+  // depth counter is needed to know when the pointer has actually left the
+  // page rather than just crossed into a child element.
+  function isFileDrag(e: DragEvent): boolean {
+    return !readyForEditor && !!e.dataTransfer?.types.includes('Files');
+  }
+
+  function onPageDragEnter(e: DragEvent) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    pageDragDepth++;
+    isPageDragging = true;
+  }
+
+  function onPageDragOver(e: DragEvent) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+  }
+
+  function onPageDragLeave(e: DragEvent) {
+    if (!isFileDrag(e)) return;
+    pageDragDepth = Math.max(0, pageDragDepth - 1);
+    if (pageDragDepth === 0) isPageDragging = false;
+  }
+
+  function onPageDrop(e: DragEvent) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    pageDragDepth = 0;
+    isPageDragging = false;
+
+    const dropped = Array.from(e.dataTransfer?.files ?? []);
+    const typeOk = dropped.filter((f) => isFileAccepted(f, PDF_ACCEPT));
+    if (typeOk.length === 0) {
+      addPdfsError = 'Please drop PDF files.';
+      return;
+    }
+
+    const tooLarge = typeOk.filter((f) => f.size > MAX_PDF_SIZE_BYTES);
+    const sized = typeOk.filter((f) => f.size <= MAX_PDF_SIZE_BYTES);
+
+    addPdfsError =
+      tooLarge.length > 0
+        ? `Skipped (over ${formatFileSize(MAX_PDF_SIZE_BYTES)}): ${tooLarge.map((f) => f.name).join(', ')}`
+        : null;
+
+    if (sized.length === 0) return;
+    if (editor.documents.length === 0) onPdfFiles(sized);
+    else editorStore.addPdfs(sized);
   }
 
   // Reflect the chosen theme on <html> so Tailwind's `dark:` variants apply.
@@ -64,7 +129,17 @@
   class:flex={readyForEditor}
   class:h-screen={readyForEditor}
   class:flex-col={readyForEditor}
+  ondragenter={onPageDragEnter}
+  ondragover={onPageDragOver}
+  ondragleave={onPageDragLeave}
+  ondrop={onPageDrop}
 >
+  {#if isPageDragging}
+    <div class="pointer-events-none fixed inset-4 z-50 flex items-center justify-center rounded-3xl border-4
+      border-dashed border-blue-500 bg-blue-50/80 backdrop-blur-sm dark:bg-blue-950/80">
+      <span class="text-xl font-medium text-blue-700 dark:text-blue-300">Drop your PDF anywhere</span>
+    </div>
+  {/if}
   {#if !readyForEditor}
     <div class="fixed right-4 top-4 z-10">
       <ThemeToggle />
@@ -95,6 +170,7 @@
             accept={PDF_ACCEPT}
             multiple
             errorMessage="Please upload PDF files."
+            maxSizeBytes={MAX_PDF_SIZE_BYTES}
             onFiles={onPdfFiles}
           />
         </div>
@@ -113,6 +189,9 @@
                 <input type="file" accept={PDF_ACCEPT} multiple class="hidden" onchange={onAddMorePdfs} />
               </label>
             </div>
+            {#if addPdfsError}
+              <p class="text-xs text-red-600 dark:text-red-400">{addPdfsError}</p>
+            {/if}
             <ul class="flex-1 space-y-1 overflow-y-auto text-sm">
               {#each editor.documents as doc (doc.id)}
                 <li class="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5

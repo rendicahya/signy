@@ -20,7 +20,7 @@
   import { fitWithinBox } from '../lib/signature/layout';
   import { getCachedPdf } from '../lib/pdf/docCache';
   import { placementFromRatioForDocument } from '../lib/pdf/placement';
-  import { isFileAccepted } from '../lib/utils/fileValidation';
+  import { isFileAccepted, formatFileSize, MAX_SIGNATURE_SIZE_BYTES } from '../lib/utils/fileValidation';
 
   const sig = $derived($signatureStore);
 
@@ -34,6 +34,11 @@
 
     if (!isFileAccepted(file, 'image/*')) {
       replaceError = 'Please upload an image file.';
+      return;
+    }
+
+    if (file.size > MAX_SIGNATURE_SIZE_BYTES) {
+      replaceError = `"${file.name}" is ${formatFileSize(file.size)} — the limit is ${formatFileSize(MAX_SIGNATURE_SIZE_BYTES)}.`;
       return;
     }
 

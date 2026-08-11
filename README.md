@@ -35,9 +35,11 @@ _Last updated: 2026-08-07._
 **Onboarding**
 
 - Two-step flow: step 1 is upload-PDF only (`components/UploadCard.svelte`, supports selecting/dropping multiple PDFs at once); step 2 shows the uploaded-PDF summary (with per-file remove and "+ Add more") plus the signature step.
+- On both pre-editor steps, the PDF drop target isn't just the upload card — the entire page accepts a dropped PDF, with a full-screen highlight while dragging (`App.svelte`).
 - Step 2 always requires an explicit **Continue to Editor** click before entering the editor — even for returning users whose signature is already saved from IndexedDB — so there's a chance to review or replace the signature before it's applied to a new batch of PDFs (`App.svelte`).
 - Signature upload/replace/delete via drag & drop or click-to-browse (`components/SignatureUploader.svelte`), persisted in IndexedDB (`lib/signature/db.ts`, `stores/signature.ts`) — never localStorage, never uploaded anywhere.
 - File type is validated on both the PDF and signature upload slots — including drag & drop, where the browser's `accept` attribute alone doesn't help (`lib/utils/fileValidation.ts`).
+- File size is capped too: 50 MB per PDF, 10 MB per signature image. Oversized files are skipped with a warning naming them (never silently dropped), even when other valid files in the same drop go through.
 - A "100% local — your files never leave this device" badge on the landing screen, ahead of any upload.
 
 **Multi-PDF support**
@@ -90,7 +92,6 @@ _Last updated: 2026-08-07._
 - **Invisible watermark** — DWT/DCT-based payload embedding. No code exists for this yet.
 - **Verification page** — a way to check whether a PDF was signed with Signy and read back the watermark payload.
 - **One signature placement per PDF.** Each document tracks a single placed signature at a time — no way to sign multiple spots on the same document in one export yet (though different documents in the same session can each have their own placement).
-- **No file size limit on uploads.** Type is validated, but there's still no cap on file size, so an extremely large PDF or image could be dropped without warning.
 - **Signature background removal.** Scanned/photographed signatures often have an off-white background; there's no automatic cleanup.
 - **No offline/PWA support.** Despite "no backend, works entirely offline" being a core principle, there's no service worker yet — the app still requires a network fetch for the very first load.
 - **No automated tests.** In particular, the pixel-to-PDF-point coordinate mapping in `lib/pdf/export.ts` and the resize/zoom rescaling logic in `stores/editor.ts` are easy to get subtly wrong and aren't covered by any tests.

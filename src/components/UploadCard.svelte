@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { isFileAccepted } from '../lib/utils/fileValidation';
+  import { isFileAccepted, formatFileSize } from '../lib/utils/fileValidation';
 
   interface Props {
     title: string;
@@ -9,6 +9,8 @@
     multiple?: boolean;
     /** Shown when a rejected file is dropped or picked. */
     errorMessage?: string;
+    /** Maximum allowed size per file, in bytes. Oversized files are skipped with a warning rather than silently dropped. */
+    maxSizeBytes?: number;
     onFiles: (files: File[]) => void;
   }
 
@@ -18,6 +20,7 @@
     accept = '',
     multiple = false,
     errorMessage = 'That file type is not supported.',
+    maxSizeBytes,
     onFiles,
   }: Props = $props();
 
@@ -29,18 +32,38 @@
     const candidates = multiple ? Array.from(files ?? []) : Array.from(files ?? []).slice(0, 1);
     if (candidates.length === 0) return;
 
-    const accepted = candidates.filter((file) => isFileAccepted(file, accept));
-    if (accepted.length === 0) {
+    const typeAccepted = candidates.filter((file) => isFileAccepted(file, accept));
+    if (typeAccepted.length === 0) {
       error = errorMessage;
       return;
     }
 
-    error = null;
-    onFiles(accepted);
+    if (!maxSizeBytes) {
+      error = null;
+      onFiles(typeAccepted);
+      return;
+    }
+
+    const tooLarge = typeAccepted.filter((file) => file.size > maxSizeBytes);
+    const sized = typeAccepted.filter((file) => file.size <= maxSizeBytes);
+
+    if (sized.length === 0) {
+      error = `File${tooLarge.length > 1 ? 's are' : ' is'} too large — the limit is ${formatFileSize(maxSizeBytes)}.`;
+      return;
+    }
+
+    // Oversized files are always surfaced, even when other files in the same
+    // drop are still accepted, so nothing silently disappears.
+    error =
+      tooLarge.length > 0
+        ? `Skipped (over ${formatFileSize(maxSizeBytes)}): ${tooLarge.map((f) => f.name).join(', ')}`
+        : null;
+    onFiles(sized);
   }
 
   function onDrop(e: DragEvent) {
     e.preventDefault();
+    e.stopPropagation();
     isDragging = false;
     handleFiles(e.dataTransfer?.files ?? null);
   }
