@@ -49,6 +49,7 @@ _Last updated: 2026-08-07._
 - **Download This PDF** exports just the active document; **Download All (ZIP)** (shown once more than one PDF is uploaded) bundles every document into a single ZIP via JSZip, auto-applying the last-used placement ratio to any document that wasn't manually positioned, and reporting which (if any) had to be skipped for having no placement at all (`lib/pdf/export.ts`, `components/ExportButton.svelte`).
 - **Apply to All Documents** (right sidebar, shown once more than one PDF is uploaded and a placement exists): affixes the current signature placement to page 1 of every uploaded document in one click. Only enabled when every uploaded document is confirmed single-page; a real page-count check also runs at click time as a safety net (`components/SignaturePanel.svelte`).
 - A shared pdf.js document cache (`lib/pdf/docCache.ts`) avoids re-parsing the same PDF for the main viewer and the page-thumbnail sidebar.
+- Optional **"Strip embedded JavaScript"** checkbox (right sidebar, off by default, persisted in `localStorage`): removes any `/OpenAction`, `/AA`, and `Names/JavaScript` entries carried over from the source PDF at export time (`lib/pdf/sanitize.ts`). Signy never adds scripts itself, but some source PDFs (e.g. Acrobat e-forms with validation/auto-calc scripts) already contain them, which some upload systems reject outright.
 
 **Editor layout**
 

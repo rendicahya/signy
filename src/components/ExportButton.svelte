@@ -10,6 +10,7 @@
     watermarkOpacity,
   } from '../stores/watermark';
   import { lastPlacement } from '../stores/placement';
+  import { stripEmbeddedScripts } from '../stores/exportOptions';
   import { exportSignedPdf, downloadSignedPdf, exportAllAsZip, downloadZip, resolvePlacement } from '../lib/pdf/export';
 
   let exportingOne = $state(false);
@@ -52,6 +53,7 @@
         renderScale: $editorStore.renderScale,
         rotation: doc.rotation,
         watermark: currentWatermark(),
+        stripScripts: $stripEmbeddedScripts,
       });
       downloadSignedPdf(bytes, doc.file.name);
       editorStore.markExported();
@@ -80,6 +82,7 @@
         $editorStore.renderScale,
         $lastPlacement,
         currentWatermark(),
+        $stripEmbeddedScripts,
       );
 
       if (result.exportedCount === 0) {
@@ -102,6 +105,21 @@
 </script>
 
 <div class="flex flex-col gap-2">
+  <label class="flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+    <input
+      type="checkbox"
+      class="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-neutral-300 text-blue-600
+        focus:ring-blue-500 dark:border-neutral-600"
+      bind:checked={$stripEmbeddedScripts}
+    />
+    <span>
+      Strip embedded JavaScript from the PDF
+      <span class="block text-neutral-400 dark:text-neutral-500">
+        Some upload systems reject PDFs containing scripts carried over from the source file.
+      </span>
+    </span>
+  </label>
+
   <button
     type="button"
     class="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors

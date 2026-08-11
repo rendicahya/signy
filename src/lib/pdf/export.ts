@@ -2,6 +2,7 @@ import { PDFDocument, degrees } from 'pdf-lib';
 import JSZip from 'jszip';
 import { loadPdf, getTotalRotation } from './loader';
 import { placementFromRatioForDocument } from './placement';
+import { stripEmbeddedScripts } from './sanitize';
 import { applyVisibleWatermark, type WatermarkOptions } from '../watermark/visible';
 import type { PdfDocumentState, PlacedSignature } from '../../stores/editor';
 import type { PlacementRatio } from '../../stores/placement';
@@ -15,6 +16,8 @@ export interface ExportParams {
   /** Additional rotation (0/90/180/270) the user chose in the editor, on top of each page's own rotation. */
   rotation?: number;
   watermark?: WatermarkOptions;
+  /** Strip any embedded JavaScript/auto-run actions carried over from the source PDF. Opt-in — see `lib/pdf/sanitize.ts`. */
+  stripScripts?: boolean;
 }
 
 function blobToBytes(blob: Blob): Promise<Uint8Array> {
@@ -29,7 +32,7 @@ function blobToBytes(blob: Blob): Promise<Uint8Array> {
  * signature.
  */
 export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array> {
-  const { pdfFile, signatureBlob, placement, renderScale, rotation = 0, watermark } = params;
+  const { pdfFile, signatureBlob, placement, renderScale, rotation = 0, watermark, stripScripts = false } = params;
 
   const watermarkedBlob = await applyVisibleWatermark(signatureBlob, watermark);
   const pngBytes = await blobToBytes(watermarkedBlob);
@@ -70,6 +73,8 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
       page.setRotation(degrees(((current + rotation) % 360 + 360) % 360));
     }
   }
+
+  if (stripScripts) stripEmbeddedScripts(pdfDoc);
 
   return pdfDoc.save();
 }
@@ -134,6 +139,7 @@ export async function exportAllAsZip(
   renderScale: number,
   lastPlacementRatio: PlacementRatio | null,
   watermark?: WatermarkOptions,
+  stripScripts?: boolean,
 ): Promise<BulkExportResult> {
   const zip = new JSZip();
   const skipped: string[] = [];
@@ -153,6 +159,7 @@ export async function exportAllAsZip(
       renderScale,
       rotation: doc.rotation,
       watermark,
+      stripScripts,
     });
 
     let name = signedFileName(doc.file.name);
