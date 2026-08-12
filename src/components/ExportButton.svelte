@@ -69,7 +69,7 @@
     const sig = $signatureStore;
 
     if (documents.length === 0 || !sig.signature) {
-      error = 'Upload a PDF and a signature first.';
+      error = 'Add a PDF and a signature first.';
       return;
     }
 
@@ -112,12 +112,7 @@
         focus:ring-blue-500 dark:border-neutral-600"
       bind:checked={$stripEmbeddedScripts}
     />
-    <span>
-      Strip embedded JavaScript from the PDF
-      <span class="block text-neutral-400 dark:text-neutral-500">
-        Some upload systems reject PDFs containing scripts carried over from the source file.
-      </span>
-    </span>
+    <span>Strip embedded JavaScript from the PDF</span>
   </label>
 
   <button
@@ -127,7 +122,7 @@
     disabled={exportingOne}
     onclick={onExportOne}
   >
-    {exportingOne ? 'Downloading…' : 'Download This PDF'}
+    {exportingOne ? 'Saving…' : 'Save This PDF'}
   </button>
 
   {#if $editorStore.documents.length > 1}
@@ -139,7 +134,7 @@
       disabled={exportingAll}
       onclick={onExportAll}
     >
-      {exportingAll ? 'Zipping…' : 'Download All (ZIP)'}
+      {exportingAll ? 'Zipping…' : 'Save All (ZIP)'}
     </button>
   {/if}
 </div>

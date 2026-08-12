@@ -45,10 +45,10 @@
       aria-labelledby="start-over-title"
     >
       <h2 id="start-over-title" class="text-base font-semibold text-neutral-800 dark:text-neutral-100">
-        You haven't downloaded anything yet
+        You haven't saved anything yet
       </h2>
       <p class="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
-        Starting over will discard your uploaded PDFs and signature placements. Are you sure you want to continue?
+        Starting over will discard your PDFs and signature placements. Are you sure you want to continue?
       </p>
       <div class="mt-5 flex justify-end gap-2">
         <button

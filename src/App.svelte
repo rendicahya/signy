@@ -4,7 +4,7 @@
   import PDFViewer from './components/PDFViewer.svelte';
   import SignaturePanel from './components/SignaturePanel.svelte';
   import PageSidebar from './components/PageSidebar.svelte';
-  import BottomToolbar from './components/BottomToolbar.svelte';
+  import FloatingControls from './components/FloatingControls.svelte';
   import Toolbar from './components/Toolbar.svelte';
   import ExportButton from './components/ExportButton.svelte';
   import StartOverButton from './components/StartOverButton.svelte';
@@ -14,10 +14,12 @@
   import { signatureStore } from './stores/signature';
   import { theme } from './stores/theme';
   import { pageSidebarOpen, togglePageSidebar } from './stores/layout';
-  import { isFileAccepted, formatFileSize, MAX_PDF_SIZE_BYTES } from './lib/utils/fileValidation';
+  import { isFileAccepted, formatFileSize, dedupeFiles, MAX_PDF_SIZE_BYTES } from './lib/utils/fileValidation';
   import { clearCachedPdf } from './lib/pdf/docCache';
 
   const PDF_ACCEPT = 'application/pdf,.pdf';
+
+  const sidebarShortcutLabel = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘B' : 'Ctrl+B';
 
   let addPdfsError: string | null = $state(null);
   let isPageDragging = $state(false);
@@ -43,7 +45,8 @@
   const readyForEditor = $derived(editor.documents.length > 0 && !!signature.signature && signatureConfirmed);
 
   function onPdfFiles(files: File[]) {
-    editorStore.loadPdfs(files);
+    const { unique } = dedupeFiles(files);
+    editorStore.loadPdfs(unique);
   }
 
   function onAddMorePdfs(e: Event) {
@@ -53,18 +56,32 @@
 
     const tooLarge = typeOk.filter((f) => f.size > MAX_PDF_SIZE_BYTES);
     const sized = typeOk.filter((f) => f.size <= MAX_PDF_SIZE_BYTES);
+    const { unique, duplicates } = dedupeFiles(
+      sized,
+      editor.documents.map((d) => d.file),
+    );
 
-    addPdfsError =
-      tooLarge.length > 0
-        ? `Skipped (over ${formatFileSize(MAX_PDF_SIZE_BYTES)}): ${tooLarge.map((f) => f.name).join(', ')}`
-        : null;
+    const messages: string[] = [];
+    if (tooLarge.length > 0) {
+      messages.push(`Skipped (over ${formatFileSize(MAX_PDF_SIZE_BYTES)}): ${tooLarge.map((f) => f.name).join(', ')}`);
+    }
+    if (duplicates.length > 0) {
+      messages.push(`Already added: ${duplicates.map((f) => f.name).join(', ')}`);
+    }
+    addPdfsError = messages.length > 0 ? messages.join(' ') : null;
 
-    if (sized.length > 0) editorStore.addPdfs(sized);
+    if (unique.length > 0) editorStore.addPdfs(unique);
   }
 
   function removeDocument(id: string) {
     clearCachedPdf(id);
     editorStore.removeDocument(id);
+  }
+
+  function removeAllDocuments() {
+    editor.documents.forEach((doc) => clearCachedPdf(doc.id));
+    editorStore.reset();
+    addPdfsError = null;
   }
 
   // Lets PDFs be dropped anywhere on the pre-editor screens, not just onto
@@ -108,22 +125,64 @@
 
     const tooLarge = typeOk.filter((f) => f.size > MAX_PDF_SIZE_BYTES);
     const sized = typeOk.filter((f) => f.size <= MAX_PDF_SIZE_BYTES);
+    const { unique, duplicates } = dedupeFiles(
+      sized,
+      editor.documents.map((d) => d.file),
+    );
 
-    addPdfsError =
-      tooLarge.length > 0
-        ? `Skipped (over ${formatFileSize(MAX_PDF_SIZE_BYTES)}): ${tooLarge.map((f) => f.name).join(', ')}`
-        : null;
+    const messages: string[] = [];
+    if (tooLarge.length > 0) {
+      messages.push(`Skipped (over ${formatFileSize(MAX_PDF_SIZE_BYTES)}): ${tooLarge.map((f) => f.name).join(', ')}`);
+    }
+    if (duplicates.length > 0) {
+      messages.push(`Already added: ${duplicates.map((f) => f.name).join(', ')}`);
+    }
+    addPdfsError = messages.length > 0 ? messages.join(' ') : null;
 
-    if (sized.length === 0) return;
-    if (editor.documents.length === 0) onPdfFiles(sized);
-    else editorStore.addPdfs(sized);
+    if (unique.length === 0) return;
+    if (editor.documents.length === 0) onPdfFiles(unique);
+    else editorStore.addPdfs(unique);
   }
 
   // Reflect the chosen theme on <html> so Tailwind's `dark:` variants apply.
   $effect(() => {
     document.documentElement.classList.toggle('dark', $theme === 'dark');
   });
+
+  // Editor-only keyboard shortcuts — all bail out while a form control has
+  // focus, so native input/select behavior (e.g. arrow keys inside the page
+  // dropdown) is never overridden.
+  //  - Ctrl/Cmd+B: toggle the page sidebar (VS Code convention).
+  //  - Left/Right: previous/next page.
+  //  - Ctrl/Cmd+Left/Right: previous/next document.
+  function onGlobalKeydown(e: KeyboardEvent) {
+    if (!readyForEditor) return;
+
+    const target = e.target as HTMLElement | null;
+    if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+
+    const mod = e.ctrlKey || e.metaKey;
+
+    if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+      e.preventDefault();
+      togglePageSidebar();
+      return;
+    }
+
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      if (mod) {
+        if (e.key === 'ArrowLeft') editorStore.prevDocument();
+        else editorStore.nextDocument();
+      } else {
+        if (e.key === 'ArrowLeft') editorStore.prevPage();
+        else editorStore.nextPage();
+      }
+    }
+  }
 </script>
+
+<svelte:window onkeydown={onGlobalKeydown} />
 
 <main
   class="min-h-screen"
@@ -160,19 +219,19 @@
             <rect x="5" y="11" width="14" height="9" rx="2" />
             <path d="M8 11V7a4 4 0 0 1 8 0v4" />
           </svg>
-          100% local — your files never leave this device, nothing is uploaded
+          100% local — your files never leave this device
         </div>
       </div>
 
       {#if editor.documents.length === 0}
-        <!-- Step 1: upload PDFs. -->
+        <!-- Step 1: add PDFs. -->
         <div class="w-full max-w-md">
           <UploadCard
-            title="Upload PDF"
+            title="Add PDF"
             subtitle="Drag & drop or click to browse — you can select multiple"
             accept={PDF_ACCEPT}
             multiple
-            errorMessage="Please upload PDF files."
+            errorMessage="Please choose PDF files."
             maxSizeBytes={MAX_PDF_SIZE_BYTES}
             onFiles={onPdfFiles}
           />
@@ -181,16 +240,25 @@
         <!-- Step 2: PDFs are in — confirm or change the signature (already
              loaded from IndexedDB for returning users), then continue. -->
         <div class="flex w-full max-w-md flex-col gap-6">
-          <div class="flex h-40 w-full flex-col gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 p-4
+          <div class="flex h-44 w-full flex-col gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 p-4
             dark:border-neutral-800 dark:bg-neutral-900">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium">
-                {editor.documents.length} PDF{editor.documents.length > 1 ? 's' : ''} uploaded
+                {editor.documents.length} PDF{editor.documents.length > 1 ? 's' : ''} added
               </span>
-              <label class="cursor-pointer text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
-                + Add more
-                <input type="file" accept={PDF_ACCEPT} multiple class="hidden" onchange={onAddMorePdfs} />
-              </label>
+              <div class="flex items-center gap-3 text-xs font-medium">
+                <label class="cursor-pointer text-blue-600 hover:underline dark:text-blue-400">
+                  + Add more
+                  <input type="file" accept={PDF_ACCEPT} multiple class="hidden" onchange={onAddMorePdfs} />
+                </label>
+                <button
+                  type="button"
+                  class="text-neutral-400 hover:text-red-500 hover:underline"
+                  onclick={removeAllDocuments}
+                >
+                  Remove all
+                </button>
+              </div>
             </div>
             {#if addPdfsError}
               <p class="text-xs text-red-600 dark:text-red-400">{addPdfsError}</p>
@@ -199,11 +267,15 @@
               {#each editor.documents as doc (doc.id)}
                 <li class="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5
                   dark:bg-neutral-800">
-                  <span class="truncate">{doc.file.name}</span>
+                  <span class="min-w-0 flex-1 truncate">{doc.file.name}</span>
+                  <span class="shrink-0 text-xs text-neutral-400">
+                    {doc.pageCount} page{doc.pageCount > 1 ? 's' : ''}
+                  </span>
                   <button
                     type="button"
                     aria-label="Remove {doc.file.name}"
-                    class="shrink-0 text-neutral-400 hover:text-red-500"
+                    class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-lg leading-none
+                      text-neutral-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/50"
                     onclick={() => removeDocument(doc.id)}
                   >
                     ×
@@ -228,7 +300,7 @@
         </div>
 
         {#if !signature.signature && !signature.loading}
-          <p class="text-sm text-neutral-400">Upload your signature to continue.</p>
+          <p class="text-sm text-neutral-400">Add your signature to continue.</p>
         {/if}
       {/if}
     </div>
@@ -239,7 +311,7 @@
       <button
         type="button"
         aria-label={$pageSidebarOpen ? 'Hide page panel' : 'Show page panel'}
-        title={$pageSidebarOpen ? 'Hide page panel' : 'Show page panel'}
+        title={`${$pageSidebarOpen ? 'Hide page panel' : 'Show page panel'} (${sidebarShortcutLabel})`}
         class="absolute top-1/2 z-20 flex h-10 w-4 -translate-y-1/2 items-center justify-center rounded-r-md
           border border-l-0 border-neutral-200 bg-white text-neutral-400 shadow-sm transition-[left]
           hover:bg-neutral-100 hover:text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900
@@ -258,18 +330,20 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6" />
         </svg>
       </button>
-      <div class="flex flex-1 flex-col overflow-hidden">
+      <div class="relative flex flex-1 flex-col overflow-hidden">
         <div class="flex-1 overflow-y-auto px-6 py-8">
           {#key active.id}
             <PDFViewer />
           {/key}
         </div>
-        <BottomToolbar />
+        <FloatingControls />
       </div>
-      <aside class="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-neutral-200 bg-white p-4
+      <aside class="flex w-72 shrink-0 flex-col border-l border-neutral-200 bg-white
         dark:border-neutral-800 dark:bg-neutral-950">
-        <SignaturePanel />
-        <div class="mt-6 flex flex-col gap-2 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+        <div class="flex-1 overflow-y-auto p-4">
+          <SignaturePanel />
+        </div>
+        <div class="flex flex-col gap-2 border-t border-neutral-200 p-4 dark:border-neutral-800">
           <StartOverButton />
           <ExportButton />
         </div>

@@ -33,7 +33,7 @@
     if (!file) return;
 
     if (!isFileAccepted(file, 'image/*')) {
-      replaceError = 'Please upload an image file.';
+      replaceError = 'Please choose an image file.';
       return;
     }
 
@@ -166,16 +166,21 @@
   {/if}
 
   {#if sig.signature && sig.previewUrl}
-    <img
-      src={sig.previewUrl}
-      alt="Signature"
-      draggable="true"
-      class="mx-auto max-h-24 cursor-grab object-contain active:cursor-grabbing"
-      ondragstart={onDragStart}
+    <button
+      type="button"
+      title="Drag onto the document. Resize using the handle after placing."
+      class="mx-auto block border-0 bg-transparent p-0"
       onclick={placeAtDefault}
-    />
-    <p class="mt-3 text-center text-xs text-neutral-400">Drag onto the document</p>
-    <p class="text-center text-xs text-neutral-400">Resize using the handle after placing</p>
+      aria-label="Place signature on the document"
+    >
+      <img
+        src={sig.previewUrl}
+        alt="Signature"
+        draggable="true"
+        class="mx-auto max-h-24 cursor-grab object-contain active:cursor-grabbing"
+        ondragstart={onDragStart}
+      />
+    </button>
 
     {#if canUseLastPosition}
       <button
@@ -195,6 +200,7 @@
         {#if $lastPlacement}
           <button
             type="button"
+            title="Only works if every added PDF is a single page."
             class="w-full rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium
               text-blue-600 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50
               dark:border-blue-700 dark:bg-blue-950 dark:text-blue-400 dark:hover:bg-blue-900"
@@ -204,7 +210,6 @@
             {applyingToAll ? 'Applying…' : `Apply to All ${$editorStore.documents.length} Documents`}
           </button>
         {/if}
-        <p class="mt-1 text-xs text-neutral-400">Only works if every uploaded PDF is a single page.</p>
         {#if applyToAllError}
           <p class="mt-1 text-xs text-red-600 dark:text-red-400">{applyToAllError}</p>
         {/if}
@@ -278,8 +283,6 @@
         bind:value={$watermarkOpacity}
         class="w-full accent-blue-600"
       />
-
-      <p class="mt-2 text-xs text-neutral-400">Stamped onto the signature when you export.</p>
     </div>
   {:else}
     <p class="text-xs text-neutral-400">No signature saved yet.</p>

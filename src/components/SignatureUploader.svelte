@@ -26,7 +26,7 @@
     if (!file) return;
 
     if (!isFileAccepted(file, 'image/*')) {
-      replaceError = 'Please upload an image file.';
+      replaceError = 'Please choose an image file.';
       return;
     }
 
@@ -61,9 +61,9 @@
   </div>
 {:else}
   <UploadCard
-    title="Upload Signature"
+    title="Add Signature"
     accept="image/*"
-    errorMessage="Please upload an image file."
+    errorMessage="Please choose an image file."
     maxSizeBytes={MAX_SIGNATURE_SIZE_BYTES}
     onFiles={onFiles}
   />

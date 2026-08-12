@@ -26,6 +26,29 @@ export function isFileAccepted(file: File, accept: string): boolean {
   });
 }
 
+/** Two Files are treated as the "same" file if name, size, and lastModified all match — the closest thing to file identity available without hashing contents. */
+function isSameFile(a: File, b: File): boolean {
+  return a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
+}
+
+/** Splits `files` into ones not already present in `existing` (nor repeated within `files` itself) and the ones skipped as duplicates. */
+export function dedupeFiles(files: File[], existing: File[] = []): { unique: File[]; duplicates: File[] } {
+  const unique: File[] = [];
+  const duplicates: File[] = [];
+  const seen = [...existing];
+
+  for (const file of files) {
+    if (seen.some((f) => isSameFile(f, file))) {
+      duplicates.push(file);
+    } else {
+      unique.push(file);
+      seen.push(file);
+    }
+  }
+
+  return { unique, duplicates };
+}
+
 export const MAX_PDF_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 export const MAX_SIGNATURE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 

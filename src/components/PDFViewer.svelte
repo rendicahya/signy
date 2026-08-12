@@ -70,6 +70,44 @@
     return doc.placedSignature.page === doc.pageNumber ? doc.placedSignature : null;
   });
 
+  // The move/resize/remove controls only show while the placed signature is
+  // "selected" — right after it's placed, or after the user clicks it again
+  // — and hide once the user clicks anywhere else, so the signature doesn't
+  // permanently sit under a distracting border and handles.
+  let selected = $state(false);
+
+  // editorStore emits a new object on every drag/resize step (updatePlacement
+  // runs per pointermove), so $activeDocument changes constantly while
+  // dragging. Comparing against the last-seen page number — rather than
+  // resetting unconditionally whenever this effect re-runs — keeps that from
+  // clearing `selected` mid-drag; it should only reset on an actual page change.
+  let lastPageForSelection: number | undefined;
+  $effect(() => {
+    const page = $activeDocument?.pageNumber;
+    if (page === lastPageForSelection) return;
+    lastPageForSelection = page;
+    selected = false;
+  });
+
+  // Auto-select on the transition from "no placement on this page" to
+  // "placed" — covers the click-to-place fallback in SignaturePanel (used on
+  // touch devices, where there's no drag & drop to hook into) in addition to
+  // this file's own onDrop. Reads placementOnCurrentPage as a plain boolean
+  // so the constant reference churn during drag (a new object every
+  // pointermove) doesn't re-trigger this — only an actual null→non-null flip does.
+  let hadPlacement = false;
+  $effect(() => {
+    const has = !!placementOnCurrentPage;
+    if (has && !hadPlacement) selected = true;
+    hadPlacement = has;
+  });
+
+  function onWindowPointerDown(e: PointerEvent) {
+    const current = wrapperEl?.querySelector('[data-placed-signature]');
+    if (current?.contains(e.target as Node)) return;
+    selected = false;
+  }
+
   function clamp(value: number, min: number, max: number): number {
     return Math.min(Math.max(value, min), max);
   }
@@ -108,6 +146,7 @@
     const placement = { x, y, width, height, page: doc.pageNumber };
     editorStore.placeSignature(placement);
     rememberPlacement(placement);
+    selected = true;
   }
 
   // Let the placed signature be moved after it's dropped.
@@ -117,6 +156,7 @@
   function onOverlayPointerDown(e: PointerEvent) {
     const current = wrapperEl.querySelector('[data-placed-signature]') as HTMLElement | null;
     if (!current) return;
+    selected = true;
     moving = true;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     const overlayRect = current.getBoundingClientRect();
@@ -141,8 +181,32 @@
 
   // Resize via the corner handle, always preserving the signature's aspect ratio.
   const MIN_SIZE = 24;
+  const KEYBOARD_RESIZE_STEP = 10;
   let resizing = false;
   let resizeStart: (PlacedSignature & { pointerX: number; pointerY: number }) | null = null;
+
+  // Shared by the pointer-drag and keyboard paths: grows/shrinks toward
+  // `targetWidth` from `origin`'s position, preserving aspect ratio and
+  // clamping so the signature never overflows the page or drops below MIN_SIZE.
+  function clampedResize(targetWidth: number, origin: PlacedSignature): { width: number; height: number } {
+    const rect = canvasEl.getBoundingClientRect();
+    const aspect = origin.width / origin.height;
+
+    let width = clamp(targetWidth, MIN_SIZE, rect.width - origin.x);
+    let height = width / aspect;
+
+    const maxHeight = rect.height - origin.y;
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * aspect;
+    }
+    if (height < MIN_SIZE) {
+      height = MIN_SIZE;
+      width = height * aspect;
+    }
+
+    return { width, height };
+  }
 
   function onResizePointerDown(e: PointerEvent) {
     e.stopPropagation();
@@ -155,25 +219,25 @@
 
   function onResizePointerMove(e: PointerEvent) {
     if (!resizing || !resizeStart) return;
-
-    const rect = canvasEl.getBoundingClientRect();
-    const aspect = resizeStart.width / resizeStart.height;
     const deltaX = e.clientX - resizeStart.pointerX;
-
-    let width = clamp(resizeStart.width + deltaX, MIN_SIZE, rect.width - resizeStart.x);
-    let height = width / aspect;
-
-    const maxHeight = rect.height - resizeStart.y;
-    if (height > maxHeight) {
-      height = maxHeight;
-      width = height * aspect;
-    }
-    if (height < MIN_SIZE) {
-      height = MIN_SIZE;
-      width = height * aspect;
-    }
-
+    const { width, height } = clampedResize(resizeStart.width + deltaX, resizeStart);
     editorStore.updatePlacement({ width, height });
+  }
+
+  // Keyboard equivalent of the drag handle, for anyone who can't drag the
+  // pointer-only resize handle: Right/Up grows, Left/Down shrinks.
+  function onResizeKeydown(e: KeyboardEvent) {
+    if (!['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const placement = $activeDocument?.placedSignature;
+    if (!placement) return;
+
+    const grow = e.key === 'ArrowUp' || e.key === 'ArrowRight';
+    const { width, height } = clampedResize(placement.width + (grow ? KEYBOARD_RESIZE_STEP : -KEYBOARD_RESIZE_STEP), placement);
+    editorStore.updatePlacement({ width, height });
+    rememberPlacement({ ...placement, width, height });
   }
 
   function onResizePointerUp(e: PointerEvent) {
@@ -184,6 +248,8 @@
     if (placement) rememberPlacement(placement);
   }
 </script>
+
+<svelte:window onpointerdown={onWindowPointerDown} />
 
 <div
   bind:this={wrapperEl}
@@ -203,7 +269,7 @@
   {#if placementOnCurrentPage && $signatureStore.previewUrl}
     <div
       data-placed-signature
-      class="absolute cursor-move touch-none border-2 border-blue-400/70 bg-blue-100/10"
+      class="absolute cursor-move touch-none {selected ? 'ring-2 ring-blue-400/70 bg-blue-100/10' : ''}"
       style:left="{placementOnCurrentPage.x}px"
       style:top="{placementOnCurrentPage.y}px"
       style:width="{placementOnCurrentPage.width}px"
@@ -236,30 +302,37 @@
         </div>
       {/if}
 
-      <div
-        class="absolute -bottom-1.5 -right-1.5 h-3.5 w-3.5 cursor-se-resize touch-none rounded-full
-          border border-white bg-blue-500 shadow"
-        onpointerdown={onResizePointerDown}
-        onpointermove={onResizePointerMove}
-        onpointerup={onResizePointerUp}
-      ></div>
+      {#if selected}
+        <div
+          role="button"
+          tabindex="0"
+          aria-label="Resize signature"
+          title="Resize signature (drag, or use arrow keys)"
+          class="absolute -bottom-1.5 -right-1.5 h-3.5 w-3.5 cursor-se-resize touch-none rounded-full
+            border border-white bg-blue-500 shadow focus:outline-none focus:ring-2 focus:ring-blue-400"
+          onpointerdown={onResizePointerDown}
+          onpointermove={onResizePointerMove}
+          onpointerup={onResizePointerUp}
+          onkeydown={onResizeKeydown}
+        ></div>
 
-      <button
-        type="button"
-        aria-label="Remove placed signature"
-        title="Remove placed signature"
-        class="absolute -right-1.5 -top-1.5 flex h-5 w-5 touch-none items-center justify-center rounded-full
-          border border-white bg-red-500 text-white shadow transition-colors hover:bg-red-600"
-        onpointerdown={(e) => e.stopPropagation()}
-        onclick={(e) => {
-          e.stopPropagation();
-          editorStore.clearPlacement();
-        }}
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="h-3 w-3">
-          <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18" />
-        </svg>
-      </button>
+        <button
+          type="button"
+          aria-label="Remove placed signature"
+          title="Remove placed signature"
+          class="absolute -right-1.5 -top-1.5 flex h-5 w-5 touch-none items-center justify-center rounded-full
+            border border-white bg-red-500 text-white shadow transition-colors hover:bg-red-600"
+          onpointerdown={(e) => e.stopPropagation()}
+          onclick={(e) => {
+            e.stopPropagation();
+            editorStore.clearPlacement();
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="h-3 w-3">
+            <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      {/if}
     </div>
   {/if}
 </div>
