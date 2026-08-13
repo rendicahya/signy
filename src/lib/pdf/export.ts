@@ -104,6 +104,45 @@ export function downloadZip(blob: Blob): void {
 }
 
 /**
+ * Opens the browser's print dialog for a PDF without downloading or
+ * navigating away — loads it into a hidden iframe (so the browser's built-in
+ * PDF viewer renders it) and calls print() on that frame once it's loaded.
+ */
+export function printPdfBytes(bytes: Uint8Array): void {
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }));
+
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = 'none';
+  iframe.setAttribute('aria-hidden', 'true');
+
+  const cleanup = () => {
+    iframe.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  iframe.onload = () => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } finally {
+      // The print dialog is modal, so removing the iframe right after
+      // print() would tear down the document it's printing — wait long
+      // enough for the user to actually interact with the dialog first.
+      window.setTimeout(cleanup, 60_000);
+    }
+  };
+
+  // Set src before inserting into the DOM — appending a src-less iframe
+  // first makes it briefly navigate to about:blank, which fires its own
+  // `load` event (and thus its own blank print()) before the real PDF loads.
+  iframe.src = url;
+  document.body.appendChild(iframe);
+}
+
+/**
  * Resolves what placement to use for a document: its own manual placement if
  * the user positioned one, otherwise the last-used ratio applied to page 1 —
  * matching the "Use last position" shortcut in the editor. Returns null if

@@ -179,6 +179,28 @@
     if (placement) rememberPlacement(placement);
   }
 
+  // Nudge the placed signature with the arrow keys while its control box (the
+  // resize handle / remove button) is showing — lets keyboard users reposition
+  // it without needing to drag.
+  const KEYBOARD_MOVE_STEP = 10;
+
+  function onOverlayKeydown(e: KeyboardEvent) {
+    if (!['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(e.key)) return;
+    e.preventDefault();
+
+    const placement = $activeDocument?.placedSignature;
+    if (!placement) return;
+
+    const rect = canvasEl.getBoundingClientRect();
+    const dx = e.key === 'ArrowLeft' ? -KEYBOARD_MOVE_STEP : e.key === 'ArrowRight' ? KEYBOARD_MOVE_STEP : 0;
+    const dy = e.key === 'ArrowUp' ? -KEYBOARD_MOVE_STEP : e.key === 'ArrowDown' ? KEYBOARD_MOVE_STEP : 0;
+
+    const x = clamp(placement.x + dx, 0, rect.width - placement.width);
+    const y = clamp(placement.y + dy, 0, rect.height - placement.height);
+    editorStore.updatePlacement({ x, y });
+    rememberPlacement({ ...placement, x, y });
+  }
+
   // Resize via the corner handle, always preserving the signature's aspect ratio.
   const MIN_SIZE = 24;
   const KEYBOARD_RESIZE_STEP = 10;
@@ -253,6 +275,8 @@
 
 <div
   bind:this={wrapperEl}
+  role="region"
+  aria-label="PDF page — drop the signature here"
   class="relative mx-auto w-fit"
   class:ring-2={isDragOver}
   class:ring-blue-400={isDragOver}
@@ -267,8 +291,17 @@
   {/if}
 
   {#if placementOnCurrentPage && $signatureStore.previewUrl}
+    <!-- role="group" is the closest ARIA fit for a movable/resizable object
+         (it groups the resize handle and remove button), but that role is
+         classified as non-interactive by Svelte's a11y check even though
+         this element is deliberately focusable and arrow-key operable. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
       data-placed-signature
+      role="group"
+      tabindex="0"
+      aria-label="Placed signature — use arrow keys to move, drag the corner handle to resize"
       class="absolute cursor-move touch-none {selected ? 'ring-2 ring-blue-400/70 bg-blue-100/10' : ''}"
       style:left="{placementOnCurrentPage.x}px"
       style:top="{placementOnCurrentPage.y}px"
@@ -277,6 +310,8 @@
       onpointerdown={onOverlayPointerDown}
       onpointermove={onOverlayPointerMove}
       onpointerup={onOverlayPointerUp}
+      onfocus={() => (selected = true)}
+      onkeydown={onOverlayKeydown}
     >
       <img
         src={$signatureStore.previewUrl}

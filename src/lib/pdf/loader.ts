@@ -25,6 +25,17 @@ export function getTotalRotation(page: { rotate: number }, extraRotation = 0): n
   return ((page.rotate + extraRotation) % 360 + 360) % 360;
 }
 
+// Tracks the in-flight render task per canvas so a newer render can cancel a
+// stale one. pdf.js does not do this on its own — two overlapping render()
+// calls on the same canvas race to set canvas.width/height and draw, which
+// tears the frame (visible as a corrupted/mirrored page) instead of queuing.
+// This can happen whenever something re-triggers PDFViewer's render effect
+// before the previous render finished, e.g. "Apply to All Documents" firing
+// several rapid store updates.
+const pendingRenders = new WeakMap<HTMLCanvasElement, ReturnType<PdfPage['render']>>();
+
+type PdfPage = Awaited<ReturnType<PdfDocument['getPage']>>;
+
 export async function renderPageToCanvas(
   doc: PdfDocument,
   pageNumber: number,
@@ -32,6 +43,8 @@ export async function renderPageToCanvas(
   scale = 1.5,
   extraRotation = 0,
 ): Promise<void> {
+  pendingRenders.get(canvas)?.cancel();
+
   const page = await doc.getPage(pageNumber);
   const rotation = getTotalRotation(page, extraRotation);
   const viewport = page.getViewport({ scale, rotation });
@@ -41,5 +54,15 @@ export async function renderPageToCanvas(
   canvas.width = viewport.width;
   canvas.height = viewport.height;
 
-  await page.render({ canvas, canvasContext: context, viewport }).promise;
+  const renderTask = page.render({ canvas, canvasContext: context, viewport });
+  pendingRenders.set(canvas, renderTask);
+  try {
+    await renderTask.promise;
+  } catch (e) {
+    // A render cancelled by a newer one isn't a real failure — the newer
+    // render will finish and draw the correct frame.
+    if (!(e instanceof Error) || e.name !== 'RenderingCancelledException') throw e;
+  } finally {
+    if (pendingRenders.get(canvas) === renderTask) pendingRenders.delete(canvas);
+  }
 }

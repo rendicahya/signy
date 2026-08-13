@@ -11,10 +11,18 @@
   } from '../stores/watermark';
   import { lastPlacement } from '../stores/placement';
   import { stripEmbeddedScripts } from '../stores/exportOptions';
-  import { exportSignedPdf, downloadSignedPdf, exportAllAsZip, downloadZip, resolvePlacement } from '../lib/pdf/export';
+  import {
+    exportSignedPdf,
+    downloadSignedPdf,
+    exportAllAsZip,
+    downloadZip,
+    resolvePlacement,
+    printPdfBytes,
+  } from '../lib/pdf/export';
 
   let exportingOne = $state(false);
   let exportingAll = $state(false);
+  let printing = $state(false);
   let error: string | null = $state(null);
 
   function currentWatermark() {
@@ -56,11 +64,47 @@
         stripScripts: $stripEmbeddedScripts,
       });
       downloadSignedPdf(bytes, doc.file.name);
-      editorStore.markExported();
+      editorStore.markDocumentExported(doc.id);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Export failed';
     } finally {
       exportingOne = false;
+    }
+  }
+
+  async function onPrint() {
+    const doc = $activeDocument;
+    const sig = $signatureStore;
+
+    if (!doc || !sig.signature) {
+      error = 'Place your signature on the document first.';
+      return;
+    }
+
+    printing = true;
+    error = null;
+    try {
+      const placement = await resolvePlacement(doc, $editorStore.renderScale, $lastPlacement);
+      if (!placement) {
+        error = 'Place your signature on the document first.';
+        return;
+      }
+
+      const bytes = await exportSignedPdf({
+        pdfFile: doc.file,
+        signatureBlob: sig.signature.blob,
+        placement,
+        renderScale: $editorStore.renderScale,
+        rotation: doc.rotation,
+        watermark: currentWatermark(),
+        stripScripts: $stripEmbeddedScripts,
+      });
+      printPdfBytes(bytes);
+      editorStore.markDocumentExported(doc.id);
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Print failed';
+    } finally {
+      printing = false;
     }
   }
 
@@ -91,7 +135,9 @@
       }
 
       downloadZip(result.zipBlob);
-      editorStore.markExported();
+      documents
+        .filter((doc) => !result.skipped.includes(doc.file.name))
+        .forEach((doc) => editorStore.markDocumentExported(doc.id));
       error =
         result.skipped.length > 0
           ? `Skipped (no placement yet): ${result.skipped.join(', ')}`
@@ -115,15 +161,45 @@
     <span>Strip embedded JavaScript from the PDF</span>
   </label>
 
-  <button
-    type="button"
-    class="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors
-      hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-    disabled={exportingOne}
-    onclick={onExportOne}
-  >
-    {exportingOne ? 'Saving…' : 'Save This PDF'}
-  </button>
+  <div class="flex gap-2">
+    <button
+      type="button"
+      class="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors
+        hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+      disabled={exportingOne}
+      onclick={onExportOne}
+    >
+      {exportingOne ? 'Saving…' : 'Save This PDF'}
+    </button>
+
+    <button
+      type="button"
+      aria-label="Print this PDF"
+      title="Print this PDF"
+      class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-300
+        text-neutral-600 transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed
+        disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+      disabled={printing}
+      onclick={onPrint}
+    >
+      {#if printing}
+        <svg viewBox="0 0 24 24" fill="none" class="h-4 w-4 animate-spin text-neutral-400">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" opacity="0.25" />
+          <path stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M21 12a9 9 0 0 0-9-9" />
+        </svg>
+      {:else}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6" />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2"
+          />
+          <rect x="6" y="14" width="12" height="7" rx="1" />
+        </svg>
+      {/if}
+    </button>
+  </div>
 
   {#if $editorStore.documents.length > 1}
     <button

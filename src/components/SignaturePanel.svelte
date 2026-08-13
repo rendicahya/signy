@@ -217,8 +217,10 @@
     {/if}
 
     <div class="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+      <h4 class="mb-2 text-sm font-semibold text-neutral-600 dark:text-neutral-300">Watermark</h4>
+
       <label for="watermark-text" class="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">
-        Watermark text
+        Text
       </label>
       <textarea
         id="watermark-text"
@@ -235,23 +237,40 @@
         Stamp current date &amp; time
       </label>
 
-      <p class="mb-1 mt-3 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Watermark position</p>
-      <div class="mx-auto grid w-16 grid-cols-3 gap-1">
-        {#each POSITIONS as pos}
-          <button
-            type="button"
-            aria-label={pos}
-            class="h-5 w-5 rounded border transition-colors"
-            class:border-blue-500={$watermarkPosition === pos}
-            class:bg-blue-500={$watermarkPosition === pos}
-            class:border-neutral-300={$watermarkPosition !== pos}
-            class:dark:border-neutral-600={$watermarkPosition !== pos}
-            onclick={() => watermarkPosition.set(pos)}
-          ></button>
-        {/each}
+      <div class="mt-3 flex items-start justify-between gap-4">
+        <div>
+          <p class="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">Position</p>
+          <div class="grid w-16 grid-cols-3 gap-1">
+            {#each POSITIONS as pos}
+              <button
+                type="button"
+                aria-label={pos}
+                class="h-5 w-5 rounded border transition-colors"
+                class:border-blue-500={$watermarkPosition === pos}
+                class:bg-blue-500={$watermarkPosition === pos}
+                class:border-neutral-300={$watermarkPosition !== pos}
+                class:dark:border-neutral-600={$watermarkPosition !== pos}
+                onclick={() => watermarkPosition.set(pos)}
+              ></button>
+            {/each}
+          </div>
+        </div>
+
+        <div>
+          <label for="watermark-color" class="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">
+            Color
+          </label>
+          <input
+            id="watermark-color"
+            type="color"
+            bind:value={$watermarkColor}
+            class="h-6 w-8 cursor-pointer rounded border border-neutral-300 bg-transparent p-0
+              dark:border-neutral-600"
+          />
+        </div>
       </div>
 
-      <p class="mb-1 mt-3 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Watermark size</p>
+      <p class="mb-1 mt-3 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Size</p>
       <input
         type="range"
         min={WATERMARK_FONT_SCALE_MIN}
@@ -261,20 +280,7 @@
         class="w-full accent-blue-600"
       />
 
-      <div class="mb-1 mt-3 flex items-center justify-between">
-        <label for="watermark-color" class="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-          Watermark color
-        </label>
-        <input
-          id="watermark-color"
-          type="color"
-          bind:value={$watermarkColor}
-          class="h-6 w-8 cursor-pointer rounded border border-neutral-300 bg-transparent p-0
-            dark:border-neutral-600"
-        />
-      </div>
-
-      <p class="mb-1 mt-3 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Watermark opacity</p>
+      <p class="mb-1 mt-3 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Opacity</p>
       <input
         type="range"
         min={WATERMARK_OPACITY_MIN}

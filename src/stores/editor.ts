@@ -20,6 +20,8 @@ export interface PdfDocumentState {
   placedSignature: PlacedSignature | null;
   /** Additional rotation (0/90/180/270) the user applied on top of the page's own rotation. */
   rotation: number;
+  /** Whether the current placement has been saved/printed — cleared whenever the placement changes. Used to warn before closing a signed-but-undownloaded tab. */
+  exported: boolean;
 }
 
 export interface EditorState {
@@ -48,6 +50,7 @@ function createDocumentState(file: File): PdfDocumentState {
     pageCount: 1,
     placedSignature: null,
     rotation: 0,
+    exported: false,
   };
 }
 
@@ -204,11 +207,15 @@ function createEditorStore() {
   }
 
   function placeSignature(placement: PlacedSignature) {
-    update((state) => updateActiveDocument(state, (doc) => ({ ...doc, placedSignature: placement })));
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({ ...doc, placedSignature: placement, exported: false })),
+    );
   }
 
   function clearPlacement() {
-    update((state) => updateActiveDocument(state, (doc) => ({ ...doc, placedSignature: null })));
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({ ...doc, placedSignature: null, exported: false })),
+    );
   }
 
   function updatePlacement(partial: Partial<PlacedSignature>) {
@@ -216,6 +223,7 @@ function createEditorStore() {
       updateActiveDocument(state, (doc) => ({
         ...doc,
         placedSignature: doc.placedSignature ? { ...doc.placedSignature, ...partial } : null,
+        exported: false,
       })),
     );
   }
@@ -224,7 +232,18 @@ function createEditorStore() {
   function setPlacementForDocument(id: string, placement: PlacedSignature | null) {
     update((state) => ({
       ...state,
-      documents: state.documents.map((doc) => (doc.id === id ? { ...doc, placedSignature: placement } : doc)),
+      documents: state.documents.map((doc) =>
+        doc.id === id ? { ...doc, placedSignature: placement, exported: false } : doc,
+      ),
+    }));
+  }
+
+  /** Marks a specific document as saved/printed in its current placement — clears the "signed but not downloaded" warning for that tab. */
+  function markDocumentExported(id: string) {
+    update((state) => ({
+      ...state,
+      hasExported: true,
+      documents: state.documents.map((doc) => (doc.id === id ? { ...doc, exported: true } : doc)),
     }));
   }
 
@@ -253,6 +272,7 @@ function createEditorStore() {
         // existing placement would misalign the next time its page is
         // rendered. Clear it; "Use last position" makes re-placing fast.
         placedSignature: null,
+        exported: false,
       })),
     );
   }
@@ -290,6 +310,7 @@ function createEditorStore() {
     clearPlacement,
     updatePlacement,
     setPlacementForDocument,
+    markDocumentExported,
     setRenderScale,
     zoomIn,
     zoomOut,
