@@ -35,3 +35,28 @@ export async function placementFromRatioForDocument(
     page: pageNumber,
   };
 }
+
+/**
+ * Reverse of placementFromRatioForDocument — expresses an existing box (in
+ * canvas-pixel coordinates for the given page/scale/rotation) as a ratio of
+ * the page size, so it can be replicated onto a different page or document.
+ * Works for any box shape (signature placement or redaction box).
+ */
+export async function boxToRatio(
+  pdfjsDoc: PdfDocument,
+  pageNumber: number,
+  renderScale: number,
+  rotation: number,
+  box: { x: number; y: number; width: number; height: number },
+): Promise<PlacementRatio> {
+  const page = await pdfjsDoc.getPage(pageNumber);
+  const totalRotation = getTotalRotation(page, rotation);
+  const viewport = page.getViewport({ scale: renderScale, rotation: totalRotation });
+
+  return {
+    xRatio: box.x / viewport.width,
+    yRatio: box.y / viewport.height,
+    widthRatio: box.width / viewport.width,
+    heightRatio: box.height / viewport.height,
+  };
+}

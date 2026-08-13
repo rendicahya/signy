@@ -1,6 +1,5 @@
 <script lang="ts">
   import UploadCard from './components/UploadCard.svelte';
-  import SignatureUploader from './components/SignatureUploader.svelte';
   import PDFViewer from './components/PDFViewer.svelte';
   import SignaturePanel from './components/SignaturePanel.svelte';
   import PageSidebar from './components/PageSidebar.svelte';
@@ -11,7 +10,6 @@
   import ThemeToggle from './components/ThemeToggle.svelte';
   import UpdateToast from './components/UpdateToast.svelte';
   import { editorStore, activeDocument } from './stores/editor';
-  import { signatureStore } from './stores/signature';
   import { theme } from './stores/theme';
   import { pageSidebarOpen, togglePageSidebar } from './stores/layout';
   import { isFileAccepted, formatFileSize, dedupeFiles, MAX_PDF_SIZE_BYTES } from './lib/utils/fileValidation';
@@ -27,22 +25,18 @@
 
   const editor = $derived($editorStore);
   const active = $derived($activeDocument);
-  const signature = $derived($signatureStore);
 
-  // Requires an explicit "Continue" on step 2 even when a signature is
-  // already saved, so returning users get a chance to change it before
-  // it's applied to a new batch of PDFs — instead of being rushed straight
-  // into the editor with whichever signature happened to be on file.
-  let signatureConfirmed = $state(false);
+  // Requires an explicit "Continue" on step 2 rather than jumping straight
+  // into the editor the moment a PDF is added, so the user gets a chance to
+  // review the batch (remove one, add more) first. Signing/redacting are
+  // both optional and handled entirely inside the editor now.
+  let continuedToEditor = $state(false);
 
   $effect(() => {
-    if (editor.documents.length === 0) signatureConfirmed = false;
+    if (editor.documents.length === 0) continuedToEditor = false;
   });
 
-  // Only enter the editor once a PDF is uploaded, the signature is ready, and
-  // the user has confirmed it — uploading PDFs first should not skip ahead
-  // and leave nothing to drag.
-  const readyForEditor = $derived(editor.documents.length > 0 && !!signature.signature && signatureConfirmed);
+  const readyForEditor = $derived(editor.documents.length > 0 && continuedToEditor);
 
   function onPdfFiles(files: File[]) {
     const { unique } = dedupeFiles(files);
@@ -210,7 +204,7 @@
       <div class="text-center">
         <h1 class="text-3xl font-semibold">Signy</h1>
         <p class="mt-2 text-neutral-500 dark:text-neutral-400">
-          Sign PDFs with a protected handwritten signature. Entirely in your browser.
+          Sign PDFs with a protected handwritten signature, and redact sensitive content. Entirely in your browser.
         </p>
         <div class="mt-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50
           px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950
@@ -237,10 +231,10 @@
           />
         </div>
       {:else}
-        <!-- Step 2: PDFs are in — confirm or change the signature (already
-             loaded from IndexedDB for returning users), then continue. -->
+        <!-- Step 2: PDFs are in — review the batch, then continue. Signing
+             and redacting are both optional and handled inside the editor. -->
         <div class="flex w-full max-w-md flex-col gap-6">
-          <div class="flex h-44 w-full flex-col gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 p-4
+          <div class="flex max-h-[60vh] w-full flex-col gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 p-4
             dark:border-neutral-800 dark:bg-neutral-900">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium">
@@ -285,23 +279,15 @@
             </ul>
           </div>
 
-          <SignatureUploader />
-
-          {#if signature.signature}
-            <button
-              type="button"
-              class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors
-                hover:bg-blue-700"
-              onclick={() => (signatureConfirmed = true)}
-            >
-              Continue to Editor
-            </button>
-          {/if}
+          <button
+            type="button"
+            class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors
+              hover:bg-blue-700"
+            onclick={() => (continuedToEditor = true)}
+          >
+            Continue to Editor
+          </button>
         </div>
-
-        {#if !signature.signature && !signature.loading}
-          <p class="text-sm text-neutral-400">Add your signature to continue.</p>
-        {/if}
       {/if}
     </div>
   {:else if active}

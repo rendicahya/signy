@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { getCachedPdf } from '../lib/pdf/docCache';
+import { getTotalRotation, type PdfDocument } from '../lib/pdf/loader';
 
 /** Signature instance placed on the page, in canvas pixel coordinates. */
 export interface PlacedSignature {
@@ -11,6 +12,17 @@ export interface PlacedSignature {
   page: number;
 }
 
+/** A user-drawn area to permanently strip from the exported PDF, in canvas pixel coordinates. */
+export interface RedactionBox {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** 1-indexed page this box belongs to. */
+  page: number;
+}
+
 /** Per-document editing state — one entry per uploaded PDF. */
 export interface PdfDocumentState {
   id: string;
@@ -18,9 +30,10 @@ export interface PdfDocumentState {
   pageNumber: number;
   pageCount: number;
   placedSignature: PlacedSignature | null;
+  redactions: RedactionBox[];
   /** Additional rotation (0/90/180/270) the user applied on top of the page's own rotation. */
   rotation: number;
-  /** Whether the current placement has been saved/printed — cleared whenever the placement changes. Used to warn before closing a signed-but-undownloaded tab. */
+  /** Whether the current placement/redactions have been saved/printed — cleared whenever either changes. Used to warn before closing an unsaved tab. */
   exported: boolean;
 }
 
@@ -49,6 +62,7 @@ function createDocumentState(file: File): PdfDocumentState {
     pageNumber: 1,
     pageCount: 1,
     placedSignature: null,
+    redactions: [],
     rotation: 0,
     exported: false,
   };
@@ -73,9 +87,9 @@ function updateActiveDocument(
 function rescale(state: EditorState, nextScale: number): EditorState {
   const renderScale = clamp(nextScale, MIN_RENDER_SCALE, MAX_RENDER_SCALE);
   const factor = renderScale / state.renderScale;
-  // Zoom is shared across every document, so a placement on any of them —
-  // not just the active one — needs to be rescaled to stay over the same
-  // spot the next time that document is viewed.
+  // Zoom is shared across every document, so a placement/redaction on any of
+  // them — not just the active one — needs to be rescaled to stay over the
+  // same spot the next time that document is viewed.
   const documents = state.documents.map((doc) => ({
     ...doc,
     placedSignature: doc.placedSignature
@@ -87,8 +101,48 @@ function rescale(state: EditorState, nextScale: number): EditorState {
           height: doc.placedSignature.height * factor,
         }
       : null,
+    redactions: doc.redactions.map((box) => ({
+      ...box,
+      x: box.x * factor,
+      y: box.y * factor,
+      width: box.width * factor,
+      height: box.height * factor,
+    })),
   }));
   return { ...state, renderScale, documents };
+}
+
+/**
+ * Re-derives a box's canvas-pixel position after the page's rotation changes,
+ * by round-tripping through pdf.js's own PDF-point conversion (old viewport
+ * pixels → PDF points → new viewport pixels) instead of discarding it — a
+ * signature or redaction the user placed shouldn't vanish just because they
+ * rotated the page afterward.
+ */
+async function rotateGeometry<T extends { x: number; y: number; width: number; height: number }>(
+  pdfjsDoc: PdfDocument,
+  pageNumber: number,
+  renderScale: number,
+  oldRotation: number,
+  newRotation: number,
+  box: T,
+): Promise<T> {
+  const page = await pdfjsDoc.getPage(pageNumber);
+  const oldViewport = page.getViewport({ scale: renderScale, rotation: getTotalRotation(page, oldRotation) });
+  const newViewport = page.getViewport({ scale: renderScale, rotation: getTotalRotation(page, newRotation) });
+
+  const [px1, py1] = oldViewport.convertToPdfPoint(box.x, box.y);
+  const [px2, py2] = oldViewport.convertToPdfPoint(box.x + box.width, box.y + box.height);
+  const [vx1, vy1] = newViewport.convertToViewportPoint(px1, py1);
+  const [vx2, vy2] = newViewport.convertToViewportPoint(px2, py2);
+
+  return {
+    ...box,
+    x: Math.min(vx1, vx2),
+    y: Math.min(vy1, vy2),
+    width: Math.abs(vx2 - vx1),
+    height: Math.abs(vy2 - vy1),
+  };
 }
 
 function createEditorStore() {
@@ -98,6 +152,16 @@ function createEditorStore() {
     renderScale: DEFAULT_RENDER_SCALE,
     hasExported: false,
   });
+
+  // Synchronous snapshot of the current state, for the rare action (rotate)
+  // that needs to read-before an `await` rather than just transform via `update`.
+  function currentState(): EditorState {
+    let value: EditorState | undefined;
+    subscribe((v) => {
+      value = v;
+    })();
+    return value!;
+  }
 
   // A document's real page count isn't known until pdf.js has actually
   // parsed it — resolve it eagerly for every uploaded document (not just
@@ -238,6 +302,52 @@ function createEditorStore() {
     }));
   }
 
+  function addRedaction(box: Omit<RedactionBox, 'id'>) {
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        redactions: [...doc.redactions, { ...box, id: crypto.randomUUID() }],
+        exported: false,
+      })),
+    );
+  }
+
+  function updateRedaction(id: string, partial: Partial<RedactionBox>) {
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        redactions: doc.redactions.map((box) => (box.id === id ? { ...box, ...partial } : box)),
+        exported: false,
+      })),
+    );
+  }
+
+  function removeRedaction(id: string) {
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        redactions: doc.redactions.filter((box) => box.id !== id),
+        exported: false,
+      })),
+    );
+  }
+
+  /** Replaces an arbitrary document's entire redaction set (not just the active one) — used by "Apply to All" to make every other document match the active one exactly. */
+  function setRedactionsForDocument(id: string, boxes: Omit<RedactionBox, 'id'>[]) {
+    update((state) => ({
+      ...state,
+      documents: state.documents.map((doc) =>
+        doc.id === id
+          ? {
+              ...doc,
+              redactions: boxes.map((box) => ({ ...box, id: crypto.randomUUID() })),
+              exported: false,
+            }
+          : doc,
+      ),
+    }));
+  }
+
   /** Marks a specific document as saved/printed in its current placement — clears the "signed but not downloaded" warning for that tab. */
   function markDocumentExported(id: string) {
     update((state) => ({
@@ -263,18 +373,43 @@ function createEditorStore() {
     update((state) => rescale(state, DEFAULT_RENDER_SCALE));
   }
 
-  function rotateBy(delta: number) {
-    update((state) =>
-      updateActiveDocument(state, (doc) => ({
-        ...doc,
-        rotation: (((doc.rotation + delta) % 360) + 360) % 360,
-        // Rotation applies uniformly to every page of this document, so any
-        // existing placement would misalign the next time its page is
-        // rendered. Clear it; "Use last position" makes re-placing fast.
-        placedSignature: null,
-        exported: false,
-      })),
-    );
+  async function rotateBy(delta: number) {
+    const state = currentState();
+    const doc = getActiveDocument(state);
+    if (!doc) return;
+
+    const { id, file, rotation: oldRotation, placedSignature, redactions } = doc;
+    const { renderScale } = state;
+    const newRotation = (((oldRotation + delta) % 360) + 360) % 360;
+
+    const applyRotation = (placement: PlacedSignature | null, boxes: RedactionBox[]) => {
+      update((state) => ({
+        ...state,
+        // Target this specific document rather than "whichever is active
+        // now" — the pdf.js work below is async, so the user could have
+        // switched tabs before it resolves.
+        documents: state.documents.map((d) =>
+          d.id === id
+            ? { ...d, rotation: newRotation, placedSignature: placement, redactions: boxes, exported: false }
+            : d,
+        ),
+      }));
+    };
+
+    try {
+      const pdfjsDoc = await getCachedPdf(id, file);
+      const newPlacement = placedSignature
+        ? await rotateGeometry(pdfjsDoc, placedSignature.page, renderScale, oldRotation, newRotation, placedSignature)
+        : null;
+      const newRedactions = await Promise.all(
+        redactions.map((box) => rotateGeometry(pdfjsDoc, box.page, renderScale, oldRotation, newRotation, box)),
+      );
+      applyRotation(newPlacement, newRedactions);
+    } catch {
+      // Couldn't re-derive the geometry (e.g. the PDF failed to load) — fall
+      // back to clearing rather than leaving stale, now-misaligned positions.
+      applyRotation(null, []);
+    }
   }
 
   function rotateLeft() {
@@ -310,6 +445,10 @@ function createEditorStore() {
     clearPlacement,
     updatePlacement,
     setPlacementForDocument,
+    addRedaction,
+    updateRedaction,
+    removeRedaction,
+    setRedactionsForDocument,
     markDocumentExported,
     setRenderScale,
     zoomIn,

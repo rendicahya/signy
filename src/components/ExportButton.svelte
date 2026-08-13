@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { editorStore, activeDocument } from '../stores/editor';
+  import { editorStore, activeDocument, type PdfDocumentState } from '../stores/editor';
   import { signatureStore } from '../stores/signature';
   import {
     watermarkText,
@@ -36,32 +36,40 @@
     };
   }
 
+  // Signing and redacting are independent — resolves whichever of the two
+  // this document actually has, and only errors if it has neither.
+  async function resolveExportInputs(doc: PdfDocumentState) {
+    const sig = $signatureStore;
+    const placement = sig.signature ? await resolvePlacement(doc, $editorStore.renderScale, $lastPlacement) : null;
+
+    if (!placement && doc.redactions.length === 0) {
+      throw new Error('Nothing to export yet — place a signature or draw a redaction first.');
+    }
+
+    return {
+      placement: placement ?? undefined,
+      signatureBlob: placement ? sig.signature?.blob : undefined,
+    };
+  }
+
   async function onExportOne() {
     const doc = $activeDocument;
-    const sig = $signatureStore;
-
-    if (!doc || !sig.signature) {
-      error = 'Place your signature on the document first.';
-      return;
-    }
+    if (!doc) return;
 
     exportingOne = true;
     error = null;
     try {
-      const placement = await resolvePlacement(doc, $editorStore.renderScale, $lastPlacement);
-      if (!placement) {
-        error = 'Place your signature on the document first.';
-        return;
-      }
+      const { placement, signatureBlob } = await resolveExportInputs(doc);
 
       const bytes = await exportSignedPdf({
         pdfFile: doc.file,
-        signatureBlob: sig.signature.blob,
+        signatureBlob,
         placement,
         renderScale: $editorStore.renderScale,
         rotation: doc.rotation,
         watermark: currentWatermark(),
         stripScripts: $stripEmbeddedScripts,
+        redactions: doc.redactions,
       });
       downloadSignedPdf(bytes, doc.file.name);
       editorStore.markDocumentExported(doc.id);
@@ -74,30 +82,22 @@
 
   async function onPrint() {
     const doc = $activeDocument;
-    const sig = $signatureStore;
-
-    if (!doc || !sig.signature) {
-      error = 'Place your signature on the document first.';
-      return;
-    }
+    if (!doc) return;
 
     printing = true;
     error = null;
     try {
-      const placement = await resolvePlacement(doc, $editorStore.renderScale, $lastPlacement);
-      if (!placement) {
-        error = 'Place your signature on the document first.';
-        return;
-      }
+      const { placement, signatureBlob } = await resolveExportInputs(doc);
 
       const bytes = await exportSignedPdf({
         pdfFile: doc.file,
-        signatureBlob: sig.signature.blob,
+        signatureBlob,
         placement,
         renderScale: $editorStore.renderScale,
         rotation: doc.rotation,
         watermark: currentWatermark(),
         stripScripts: $stripEmbeddedScripts,
+        redactions: doc.redactions,
       });
       printPdfBytes(bytes);
       editorStore.markDocumentExported(doc.id);
@@ -112,8 +112,8 @@
     const documents = $editorStore.documents;
     const sig = $signatureStore;
 
-    if (documents.length === 0 || !sig.signature) {
-      error = 'Add a PDF and a signature first.';
+    if (documents.length === 0) {
+      error = 'Add a PDF first.';
       return;
     }
 
@@ -122,7 +122,7 @@
     try {
       const result = await exportAllAsZip(
         documents,
-        sig.signature.blob,
+        sig.signature?.blob ?? null,
         $editorStore.renderScale,
         $lastPlacement,
         currentWatermark(),
@@ -130,7 +130,7 @@
       );
 
       if (result.exportedCount === 0) {
-        error = 'Place your signature on at least one document first.';
+        error = 'Place a signature or draw a redaction on at least one document first.';
         return;
       }
 
@@ -140,7 +140,7 @@
         .forEach((doc) => editorStore.markDocumentExported(doc.id));
       error =
         result.skipped.length > 0
-          ? `Skipped (no placement yet): ${result.skipped.join(', ')}`
+          ? `Skipped (nothing to export): ${result.skipped.join(', ')}`
           : null;
     } catch (e) {
       error = e instanceof Error ? e.message : 'Export failed';

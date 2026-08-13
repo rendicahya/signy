@@ -3,14 +3,16 @@ import JSZip from 'jszip';
 import { loadPdf, getTotalRotation } from './loader';
 import { placementFromRatioForDocument } from './placement';
 import { stripEmbeddedScripts } from './sanitize';
+import { applyRedactions } from './redact';
 import { applyVisibleWatermark, type WatermarkOptions } from '../watermark/visible';
-import type { PdfDocumentState, PlacedSignature } from '../../stores/editor';
+import type { PdfDocumentState, PlacedSignature, RedactionBox } from '../../stores/editor';
 import type { PlacementRatio } from '../../stores/placement';
 
 export interface ExportParams {
   pdfFile: File;
-  signatureBlob: Blob;
-  placement: PlacedSignature;
+  /** Present only if a signature should be drawn onto the page — signing is optional now that redaction can stand alone. */
+  signatureBlob?: Blob;
+  placement?: PlacedSignature;
   /** Canvas render scale used by PDFViewer, needed to map pixels back to PDF points. */
   renderScale: number;
   /** Additional rotation (0/90/180/270) the user chose in the editor, on top of each page's own rotation. */
@@ -18,6 +20,8 @@ export interface ExportParams {
   watermark?: WatermarkOptions;
   /** Strip any embedded JavaScript/auto-run actions carried over from the source PDF. Opt-in — see `lib/pdf/sanitize.ts`. */
   stripScripts?: boolean;
+  /** Areas to permanently strip from the exported PDF before the signature is drawn. */
+  redactions?: RedactionBox[];
 }
 
 function blobToBytes(blob: Blob): Promise<Uint8Array> {
@@ -25,43 +29,60 @@ function blobToBytes(blob: Blob): Promise<Uint8Array> {
 }
 
 /**
- * Watermarks the signature, embeds it into the page it was placed on, and
- * returns the signed PDF bytes. Nothing here touches the network —
- * everything runs with pdf-lib (and pdf.js for coordinate mapping) in the
- * browser. All pages are preserved; only the placement's own page gets the
- * signature.
+ * Applies redaction and/or a signature to a document and returns the result.
+ * Nothing here touches the network — everything runs with pdf-lib (and
+ * pdf.js for coordinate mapping) in the browser. Signing and redacting are
+ * independent: either, both, or (if neither is given) just a pass-through
+ * copy of the original bytes.
  */
 export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array> {
-  const { pdfFile, signatureBlob, placement, renderScale, rotation = 0, watermark, stripScripts = false } = params;
-
-  const watermarkedBlob = await applyVisibleWatermark(signatureBlob, watermark);
-  const pngBytes = await blobToBytes(watermarkedBlob);
+  const {
+    pdfFile,
+    signatureBlob,
+    placement,
+    renderScale,
+    rotation = 0,
+    watermark,
+    stripScripts = false,
+    redactions = [],
+  } = params;
 
   const pdfBytes = await blobToBytes(pdfFile);
-
-  // `placement` is in canvas pixel coordinates for whatever page/scale/rotation
-  // PDFViewer was displaying. Re-derive the exact same pdf.js viewport for that
-  // page here and use its built-in point conversion — far less error-prone
-  // than reimplementing the rotation trigonometry by hand, and it stays
-  // correct for all four 90°-multiple rotations.
   const pdfjsDoc = await loadPdf(pdfFile);
-  const pdfjsPage = await pdfjsDoc.getPage(placement.page);
-  const totalRotation = getTotalRotation(pdfjsPage, rotation);
-  const viewport = pdfjsPage.getViewport({ scale: renderScale, rotation: totalRotation });
-
-  const [x1, y1] = viewport.convertToPdfPoint(placement.x, placement.y);
-  const [x2, y2] = viewport.convertToPdfPoint(placement.x + placement.width, placement.y + placement.height);
-
-  const x = Math.min(x1, x2);
-  const y = Math.min(y1, y2);
-  const width = Math.abs(x2 - x1);
-  const height = Math.abs(y2 - y1);
-
   const pdfDoc = await PDFDocument.load(pdfBytes);
-  const targetPage = pdfDoc.getPage(placement.page - 1); // pdf-lib pages are 0-indexed
-  const pngImage = await pdfDoc.embedPng(pngBytes);
 
-  targetPage.drawImage(pngImage, { x, y, width, height });
+  // Flatten any redacted pages — including the page the signature lands on,
+  // if it's one of them — before drawing the signature, so the signature
+  // ends up as a normal image on top of the flattened page rather than being
+  // wiped out by it.
+  await applyRedactions(pdfDoc, pdfjsDoc, redactions, renderScale, rotation);
+
+  if (placement && signatureBlob) {
+    const watermarkedBlob = await applyVisibleWatermark(signatureBlob, watermark);
+    const pngBytes = await blobToBytes(watermarkedBlob);
+
+    // `placement` is in canvas pixel coordinates for whatever page/scale/rotation
+    // PDFViewer was displaying. Re-derive the exact same pdf.js viewport for that
+    // page here and use its built-in point conversion — far less error-prone
+    // than reimplementing the rotation trigonometry by hand, and it stays
+    // correct for all four 90°-multiple rotations.
+    const pdfjsPage = await pdfjsDoc.getPage(placement.page);
+    const totalRotation = getTotalRotation(pdfjsPage, rotation);
+    const viewport = pdfjsPage.getViewport({ scale: renderScale, rotation: totalRotation });
+
+    const [x1, y1] = viewport.convertToPdfPoint(placement.x, placement.y);
+    const [x2, y2] = viewport.convertToPdfPoint(placement.x + placement.width, placement.y + placement.height);
+
+    const x = Math.min(x1, x2);
+    const y = Math.min(y1, y2);
+    const width = Math.abs(x2 - x1);
+    const height = Math.abs(y2 - y1);
+
+    const targetPage = pdfDoc.getPage(placement.page - 1); // pdf-lib pages are 0-indexed
+    const pngImage = await pdfDoc.embedPng(pngBytes);
+
+    targetPage.drawImage(pngImage, { x, y, width, height });
+  }
 
   // The rotation the user chose represents "this scan is sideways" and is
   // applied to every page uniformly (each relative to its own existing
@@ -163,18 +184,18 @@ export async function resolvePlacement(
 export interface BulkExportResult {
   zipBlob: Blob;
   exportedCount: number;
-  /** File names of documents that had no placement available and were left out of the ZIP. */
+  /** File names of documents skipped because they had neither a resolvable signature placement nor a redaction. */
   skipped: string[];
 }
 
 /**
- * Exports every document that has a resolvable placement into a single ZIP.
- * Documents with neither a manual placement nor a remembered ratio are
- * skipped and reported back so the caller can tell the user.
+ * Exports every document that has a resolvable signature placement and/or a
+ * redaction into a single ZIP. Documents with neither are skipped and
+ * reported back so the caller can tell the user.
  */
 export async function exportAllAsZip(
   documents: PdfDocumentState[],
-  signatureBlob: Blob,
+  signatureBlob: Blob | null,
   renderScale: number,
   lastPlacementRatio: PlacementRatio | null,
   watermark?: WatermarkOptions,
@@ -185,20 +206,21 @@ export async function exportAllAsZip(
   const usedNames = new Set<string>();
 
   for (const doc of documents) {
-    const placement = await resolvePlacement(doc, renderScale, lastPlacementRatio);
-    if (!placement) {
+    const placement = signatureBlob ? await resolvePlacement(doc, renderScale, lastPlacementRatio) : null;
+    if (!placement && doc.redactions.length === 0) {
       skipped.push(doc.file.name);
       continue;
     }
 
     const bytes = await exportSignedPdf({
       pdfFile: doc.file,
-      signatureBlob,
-      placement,
+      signatureBlob: placement ? (signatureBlob ?? undefined) : undefined,
+      placement: placement ?? undefined,
       renderScale,
       rotation: doc.rotation,
       watermark,
       stripScripts,
+      redactions: doc.redactions,
     });
 
     let name = signedFileName(doc.file.name);

@@ -153,12 +153,10 @@
 <div>
   <div class="mb-3 flex items-center justify-between">
     <h3 class="text-sm font-semibold text-neutral-600 dark:text-neutral-300">Your Signature</h3>
-    {#if sig.signature}
-      <label class="cursor-pointer text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
-        Replace Signature
-        <input type="file" accept="image/*" class="hidden" onchange={onReplace} />
-      </label>
-    {/if}
+    <label class="cursor-pointer text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
+      {sig.signature ? 'Replace Signature' : 'Add Signature'}
+      <input type="file" accept="image/*" class="hidden" onchange={onReplace} />
+    </label>
   </div>
 
   {#if replaceError}
@@ -291,6 +289,8 @@
       />
     </div>
   {:else}
-    <p class="text-xs text-neutral-400">No signature saved yet.</p>
+    <p class="text-xs text-neutral-400">
+      No signature saved yet — add one above to sign, or use Redact below the document if that's all you need.
+    </p>
   {/if}
 </div>

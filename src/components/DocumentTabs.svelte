@@ -18,7 +18,7 @@
     editorStore.removeDocument(id);
   }
 
-  // Closing a tab whose signature was placed but never saved/printed would
+  // Closing a tab whose signature/redactions were never saved/printed would
   // silently throw away that work, so confirm first — mirrors StartOverButton's
   // "you haven't saved anything yet" guard, just scoped to a single document.
   let pendingCloseId: string | null = $state(null);
@@ -27,7 +27,8 @@
   function closeDocument(e: MouseEvent, id: string) {
     e.stopPropagation();
     const doc = $editorStore.documents.find((d) => d.id === id);
-    if (doc?.placedSignature && !doc.exported) {
+    const hasUnsavedWork = doc && (doc.placedSignature || doc.redactions.length > 0) && !doc.exported;
+    if (hasUnsavedWork) {
       pendingCloseId = id;
     } else {
       removeDocument(id);
@@ -67,13 +68,13 @@
       onclick={() => selectDocument(doc.id)}
       onkeydown={(e) => onTabKeydown(e, doc.id)}
     >
-      {#if doc.placedSignature}
+      {#if doc.placedSignature || doc.redactions.length > 0}
         <svg
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
           stroke-width="2.5"
-          aria-label="Signed"
+          aria-label="Signed and/or redacted"
           class="h-3 w-3 shrink-0 text-emerald-500"
         >
           <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
@@ -107,8 +108,8 @@
         This document hasn't been saved
       </h2>
       <p class="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
-        "{pendingCloseDoc.file.name}" has a signature placed but hasn't been downloaded or printed yet. Closing
-        this tab will discard it. Are you sure you want to continue?
+        "{pendingCloseDoc.file.name}" has a signature and/or redaction in place but hasn't been downloaded or
+        printed yet. Closing this tab will discard it. Are you sure you want to continue?
       </p>
       <div class="mt-5 flex justify-end gap-2">
         <button
