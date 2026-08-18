@@ -4,6 +4,7 @@
   import { getCachedPdf } from '../lib/pdf/docCache';
   import { editorStore, activeDocument, type PlacedSignature, type RedactionBox } from '../stores/editor';
   import { redactMode } from '../stores/redact';
+  import { clickToPlaceMode } from '../stores/clickToPlace';
   import { signatureStore } from '../stores/signature';
   import {
     watermarkText,
@@ -135,6 +136,26 @@
     const sig = $signatureStore;
     const { width, height } = fitWithinBox(sig.naturalWidth, sig.naturalHeight);
 
+    const rect = canvasEl.getBoundingClientRect();
+    const x = clamp(e.clientX - rect.left - width / 2, 0, rect.width - width);
+    const y = clamp(e.clientY - rect.top - height / 2, 0, rect.height - height);
+
+    const placement = { x, y, width, height, page: doc.pageNumber };
+    const id = editorStore.addSignature(placement);
+    rememberPlacement({ ...placement, id });
+    selectedSignatureId = id;
+  }
+
+  function onCanvasClick(e: PointerEvent) {
+    if (!$clickToPlaceMode || $redactMode) return;
+
+    const doc = $activeDocument;
+    if (!doc) return;
+
+    const sig = $signatureStore;
+    if (!sig.signature) return;
+
+    const { width, height } = fitWithinBox(sig.naturalWidth, sig.naturalHeight);
     const rect = canvasEl.getBoundingClientRect();
     const x = clamp(e.clientX - rect.left - width / 2, 0, rect.width - width);
     const y = clamp(e.clientY - rect.top - height / 2, 0, rect.height - height);
@@ -441,7 +462,8 @@
   <canvas
     bind:this={canvasEl}
     class="rounded-lg shadow-lg"
-    class:cursor-crosshair={$redactMode}
+    class:cursor-crosshair={$redactMode || $clickToPlaceMode}
+    onpointerdown={onCanvasClick}
   ></canvas>
 
   {#if error}

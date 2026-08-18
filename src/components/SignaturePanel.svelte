@@ -2,6 +2,7 @@
   import { signatureStore } from '../stores/signature';
   import { editorStore, activeDocument } from '../stores/editor';
   import { lastPlacement } from '../stores/placement';
+  import { clickToPlaceMode } from '../stores/clickToPlace';
   import {
     watermarkText,
     includeTimestamp,
@@ -162,21 +163,32 @@
   {/if}
 
   {#if sig.signature && sig.previewUrl}
-    <button
-      type="button"
-      title="Drag onto the document. Resize using the handle after placing."
-      class="mx-auto block border-0 bg-transparent p-0"
-      onclick={placeAtDefault}
-      aria-label="Place signature on the document"
-    >
-      <img
-        src={sig.previewUrl}
-        alt="Signature"
-        draggable="true"
-        class="mx-auto max-h-24 cursor-grab object-contain active:cursor-grabbing"
-        ondragstart={onDragStart}
-      />
-    </button>
+    <div class="space-y-2">
+      <button
+        type="button"
+        title="Drag onto the document. Resize using the handle after placing."
+        class="mx-auto block border-0 bg-transparent p-0"
+        onclick={placeAtDefault}
+        aria-label="Place signature on the document"
+      >
+        <img
+          src={sig.previewUrl}
+          alt="Signature"
+          draggable="true"
+          class="mx-auto max-h-24 cursor-grab object-contain active:cursor-grabbing"
+          ondragstart={onDragStart}
+        />
+      </button>
+
+      <label class="flex items-center justify-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-400 dark:hover:bg-blue-900 cursor-pointer">
+        <input
+          type="checkbox"
+          bind:checked={$clickToPlaceMode}
+          class="rounded"
+        />
+        Click to place mode
+      </label>
+    </div>
 
     {#if canUseLastPosition}
       <button
