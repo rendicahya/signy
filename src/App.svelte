@@ -36,6 +36,13 @@
     if (editor.documents.length === 0) continuedToEditor = false;
   });
 
+  // Clear the drag overlay when PDFs are added (including via drop on UploadCard).
+  $effect(() => {
+    editor.documents.length;
+    pageDragDepth = 0;
+    isPageDragging = false;
+  });
+
   const readyForEditor = $derived(editor.documents.length > 0 && continuedToEditor);
 
   function onPdfFiles(files: File[]) {
