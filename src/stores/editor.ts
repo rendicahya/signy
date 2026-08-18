@@ -4,6 +4,7 @@ import { getTotalRotation, type PdfDocument } from '../lib/pdf/loader';
 
 /** Signature instance placed on the page, in canvas pixel coordinates. */
 export interface PlacedSignature {
+  id: string;
   x: number;
   y: number;
   width: number;
@@ -29,7 +30,7 @@ export interface PdfDocumentState {
   file: File;
   pageNumber: number;
   pageCount: number;
-  placedSignature: PlacedSignature | null;
+  placedSignatures: PlacedSignature[];
   redactions: RedactionBox[];
   /** Additional rotation (0/90/180/270) the user applied on top of the page's own rotation. */
   rotation: number;
@@ -61,7 +62,7 @@ function createDocumentState(file: File): PdfDocumentState {
     file,
     pageNumber: 1,
     pageCount: 1,
-    placedSignature: null,
+    placedSignatures: [],
     redactions: [],
     rotation: 0,
     exported: false,
@@ -92,15 +93,13 @@ function rescale(state: EditorState, nextScale: number): EditorState {
   // same spot the next time that document is viewed.
   const documents = state.documents.map((doc) => ({
     ...doc,
-    placedSignature: doc.placedSignature
-      ? {
-          ...doc.placedSignature,
-          x: doc.placedSignature.x * factor,
-          y: doc.placedSignature.y * factor,
-          width: doc.placedSignature.width * factor,
-          height: doc.placedSignature.height * factor,
-        }
-      : null,
+    placedSignatures: doc.placedSignatures.map((sig) => ({
+      ...sig,
+      x: sig.x * factor,
+      y: sig.y * factor,
+      width: sig.width * factor,
+      height: sig.height * factor,
+    })),
     redactions: doc.redactions.map((box) => ({
       ...box,
       x: box.x * factor,
@@ -270,34 +269,50 @@ function createEditorStore() {
     );
   }
 
-  function placeSignature(placement: PlacedSignature) {
-    update((state) =>
-      updateActiveDocument(state, (doc) => ({ ...doc, placedSignature: placement, exported: false })),
-    );
-  }
-
-  function clearPlacement() {
-    update((state) =>
-      updateActiveDocument(state, (doc) => ({ ...doc, placedSignature: null, exported: false })),
-    );
-  }
-
-  function updatePlacement(partial: Partial<PlacedSignature>) {
+  function addSignature(placement: Omit<PlacedSignature, 'id'>): string {
+    const id = crypto.randomUUID();
     update((state) =>
       updateActiveDocument(state, (doc) => ({
         ...doc,
-        placedSignature: doc.placedSignature ? { ...doc.placedSignature, ...partial } : null,
+        placedSignatures: [...doc.placedSignatures, { ...placement, id }],
+        exported: false,
+      })),
+    );
+    return id;
+  }
+
+  function removeSignature(id: string) {
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        placedSignatures: doc.placedSignatures.filter((sig) => sig.id !== id),
         exported: false,
       })),
     );
   }
 
-  /** Sets a placement on an arbitrary document, not just the active one — used to apply one signature to every uploaded document at once. */
-  function setPlacementForDocument(id: string, placement: PlacedSignature | null) {
+  function updateSignature(id: string, partial: Partial<PlacedSignature>) {
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        placedSignatures: doc.placedSignatures.map((sig) => (sig.id === id ? { ...sig, ...partial } : sig)),
+        exported: false,
+      })),
+    );
+  }
+
+  /** Replaces an arbitrary document's entire signature set (not just the active one) — used by "Apply to All" to make every document have the same placement. */
+  function setSignaturesForDocument(id: string, placements: Omit<PlacedSignature, 'id'>[]) {
     update((state) => ({
       ...state,
       documents: state.documents.map((doc) =>
-        doc.id === id ? { ...doc, placedSignature: placement, exported: false } : doc,
+        doc.id === id
+          ? {
+              ...doc,
+              placedSignatures: placements.map((placement) => ({ ...placement, id: crypto.randomUUID() })),
+              exported: false,
+            }
+          : doc,
       ),
     }));
   }
@@ -378,11 +393,11 @@ function createEditorStore() {
     const doc = getActiveDocument(state);
     if (!doc) return;
 
-    const { id, file, rotation: oldRotation, placedSignature, redactions } = doc;
+    const { id, file, rotation: oldRotation, placedSignatures, redactions } = doc;
     const { renderScale } = state;
     const newRotation = (((oldRotation + delta) % 360) + 360) % 360;
 
-    const applyRotation = (placement: PlacedSignature | null, boxes: RedactionBox[]) => {
+    const applyRotation = (placements: PlacedSignature[], boxes: RedactionBox[]) => {
       update((state) => ({
         ...state,
         // Target this specific document rather than "whichever is active
@@ -390,7 +405,7 @@ function createEditorStore() {
         // switched tabs before it resolves.
         documents: state.documents.map((d) =>
           d.id === id
-            ? { ...d, rotation: newRotation, placedSignature: placement, redactions: boxes, exported: false }
+            ? { ...d, rotation: newRotation, placedSignatures: placements, redactions: boxes, exported: false }
             : d,
         ),
       }));
@@ -398,17 +413,19 @@ function createEditorStore() {
 
     try {
       const pdfjsDoc = await getCachedPdf(id, file);
-      const newPlacement = placedSignature
-        ? await rotateGeometry(pdfjsDoc, placedSignature.page, renderScale, oldRotation, newRotation, placedSignature)
-        : null;
+      const newPlacements = await Promise.all(
+        placedSignatures.map((sig) =>
+          rotateGeometry(pdfjsDoc, sig.page, renderScale, oldRotation, newRotation, sig),
+        ),
+      );
       const newRedactions = await Promise.all(
         redactions.map((box) => rotateGeometry(pdfjsDoc, box.page, renderScale, oldRotation, newRotation, box)),
       );
-      applyRotation(newPlacement, newRedactions);
+      applyRotation(newPlacements, newRedactions);
     } catch {
       // Couldn't re-derive the geometry (e.g. the PDF failed to load) — fall
       // back to clearing rather than leaving stale, now-misaligned positions.
-      applyRotation(null, []);
+      applyRotation([], []);
     }
   }
 
@@ -441,10 +458,10 @@ function createEditorStore() {
     goToPage,
     nextPage,
     prevPage,
-    placeSignature,
-    clearPlacement,
-    updatePlacement,
-    setPlacementForDocument,
+    addSignature,
+    removeSignature,
+    updateSignature,
+    setSignaturesForDocument,
     addRedaction,
     updateRedaction,
     removeRedaction,

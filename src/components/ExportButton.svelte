@@ -16,7 +16,7 @@
     downloadSignedPdf,
     exportAllAsZip,
     downloadZip,
-    resolvePlacement,
+    resolvePlacements,
     printPdfBytes,
   } from '../lib/pdf/export';
 
@@ -40,15 +40,15 @@
   // this document actually has, and only errors if it has neither.
   async function resolveExportInputs(doc: PdfDocumentState) {
     const sig = $signatureStore;
-    const placement = sig.signature ? await resolvePlacement(doc, $editorStore.renderScale, $lastPlacement) : null;
+    const placements = sig.signature ? await resolvePlacements(doc, $editorStore.renderScale, $lastPlacement) : [];
 
-    if (!placement && doc.redactions.length === 0) {
+    if (placements.length === 0 && doc.redactions.length === 0) {
       throw new Error('Nothing to export yet — place a signature or draw a redaction first.');
     }
 
     return {
-      placement: placement ?? undefined,
-      signatureBlob: placement ? sig.signature?.blob : undefined,
+      placements: placements.length > 0 ? placements : undefined,
+      signatureBlob: placements.length > 0 ? sig.signature?.blob : undefined,
     };
   }
 
@@ -59,12 +59,12 @@
     exportingOne = true;
     error = null;
     try {
-      const { placement, signatureBlob } = await resolveExportInputs(doc);
+      const { placements, signatureBlob } = await resolveExportInputs(doc);
 
       const bytes = await exportSignedPdf({
         pdfFile: doc.file,
         signatureBlob,
-        placement,
+        placements,
         renderScale: $editorStore.renderScale,
         rotation: doc.rotation,
         watermark: currentWatermark(),
@@ -87,12 +87,12 @@
     printing = true;
     error = null;
     try {
-      const { placement, signatureBlob } = await resolveExportInputs(doc);
+      const { placements, signatureBlob } = await resolveExportInputs(doc);
 
       const bytes = await exportSignedPdf({
         pdfFile: doc.file,
         signatureBlob,
-        placement,
+        placements,
         renderScale: $editorStore.renderScale,
         rotation: doc.rotation,
         watermark: currentWatermark(),

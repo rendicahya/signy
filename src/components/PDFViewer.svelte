@@ -64,11 +64,11 @@
     });
   });
 
-  // Only show a placement (or the placed-signature overlay) when we're looking at its own page.
-  const placementOnCurrentPage = $derived.by(() => {
+  // Only show placements when we're looking at their page.
+  const signaturesOnCurrentPage = $derived.by(() => {
     const doc = $activeDocument;
-    if (!doc?.placedSignature) return null;
-    return doc.placedSignature.page === doc.pageNumber ? doc.placedSignature : null;
+    if (!doc) return [];
+    return doc.placedSignatures.filter((sig) => sig.page === doc.pageNumber);
   });
 
   const redactionsOnCurrentPage = $derived.by(() => {
@@ -77,42 +77,26 @@
     return doc.redactions.filter((box) => box.page === doc.pageNumber);
   });
 
-  // The move/resize/remove controls only show while the placed signature is
+  // The move/resize/remove controls only show while a signature is
   // "selected" — right after it's placed, or after the user clicks it again
-  // — and hide once the user clicks anywhere else, so the signature doesn't
+  // — and hide once the user clicks anywhere else, so signatures don't
   // permanently sit under a distracting border and handles.
-  let selected = $state(false);
+  let selectedSignatureId: string | null = $state(null);
 
-  // editorStore emits a new object on every drag/resize step (updatePlacement
-  // runs per pointermove), so $activeDocument changes constantly while
-  // dragging. Comparing against the last-seen page number — rather than
-  // resetting unconditionally whenever this effect re-runs — keeps that from
-  // clearing `selected` mid-drag; it should only reset on an actual page change.
+  // Reset selection when the page changes.
   let lastPageForSelection: number | undefined;
   $effect(() => {
     const page = $activeDocument?.pageNumber;
     if (page === lastPageForSelection) return;
     lastPageForSelection = page;
-    selected = false;
-    selectedRedactionId = null;
-  });
-
-  // Auto-select on the transition from "no placement on this page" to
-  // "placed" — covers the click-to-place fallback in SignaturePanel (used on
-  // touch devices, where there's no drag & drop to hook into) in addition to
-  // this file's own onDrop. Reads placementOnCurrentPage as a plain boolean
-  // so the constant reference churn during drag (a new object every
-  // pointermove) doesn't re-trigger this — only an actual null→non-null flip does.
-  let hadPlacement = false;
-  $effect(() => {
-    const has = !!placementOnCurrentPage;
-    if (has && !hadPlacement) selected = true;
-    hadPlacement = has;
+    selectedSignatureId = null;
   });
 
   function onWindowPointerDown(e: PointerEvent) {
-    const current = wrapperEl?.querySelector('[data-placed-signature]');
-    if (!current?.contains(e.target as Node)) selected = false;
+    const current = selectedSignatureId
+      ? wrapperEl?.querySelector(`[data-placed-signature="${selectedSignatureId}"]`)
+      : null;
+    if (!current?.contains(e.target as Node)) selectedSignatureId = null;
 
     const currentRedaction = selectedRedactionId
       ? wrapperEl?.querySelector(`[data-redaction="${selectedRedactionId}"]`)
@@ -156,68 +140,90 @@
     const y = clamp(e.clientY - rect.top - height / 2, 0, rect.height - height);
 
     const placement = { x, y, width, height, page: doc.pageNumber };
-    editorStore.placeSignature(placement);
-    rememberPlacement(placement);
-    selected = true;
+    const id = editorStore.addSignature(placement);
+    rememberPlacement({ ...placement, id });
+    selectedSignatureId = id;
   }
 
-  // Let the placed signature be moved after it's dropped.
-  let moving = false;
+  // Let placed signatures be moved after they're dropped.
+  let movingSignatureId: string | null = null;
   let moveOffset = { x: 0, y: 0 };
 
-  function onOverlayPointerDown(e: PointerEvent) {
-    const current = wrapperEl.querySelector('[data-placed-signature]') as HTMLElement | null;
-    if (!current) return;
-    selected = true;
-    moving = true;
+  function onSignaturePointerDown(e: PointerEvent, id: string) {
+    e.stopPropagation();
+    selectedSignatureId = id;
+    movingSignatureId = id;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    const overlayRect = current.getBoundingClientRect();
+    const overlayRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     moveOffset = { x: e.clientX - overlayRect.left, y: e.clientY - overlayRect.top };
   }
 
-  function onOverlayPointerMove(e: PointerEvent) {
-    if (!moving) return;
-    const placement = $activeDocument?.placedSignature;
-    if (!placement) return;
+  function onSignaturePointerMove(e: PointerEvent, id: string) {
+    if (movingSignatureId !== id) return;
+    const sig = $activeDocument?.placedSignatures.find((s) => s.id === id);
+    if (!sig) return;
     const rect = canvasEl.getBoundingClientRect();
-    const x = clamp(e.clientX - rect.left - moveOffset.x, 0, rect.width - placement.width);
-    const y = clamp(e.clientY - rect.top - moveOffset.y, 0, rect.height - placement.height);
-    editorStore.updatePlacement({ x, y });
+    const x = clamp(e.clientX - rect.left - moveOffset.x, 0, rect.width - sig.width);
+    const y = clamp(e.clientY - rect.top - moveOffset.y, 0, rect.height - sig.height);
+    editorStore.updateSignature(id, { x, y });
   }
 
-  function onOverlayPointerUp() {
-    moving = false;
-    const placement = $activeDocument?.placedSignature;
-    if (placement) rememberPlacement(placement);
+  function onSignaturePointerUp() {
+    if (movingSignatureId) {
+      const sig = $activeDocument?.placedSignatures.find((s) => s.id === movingSignatureId);
+      if (sig) rememberPlacement(sig);
+    }
+    movingSignatureId = null;
   }
 
-  // Nudge the placed signature with the arrow keys while its control box (the
-  // resize handle / remove button) is showing — lets keyboard users reposition
-  // it without needing to drag.
+  // Nudge a signature with the arrow keys while its control box (the resize
+  // handle / remove button) is showing — lets keyboard users reposition it
+  // without needing to drag.
   const KEYBOARD_MOVE_STEP = 10;
 
-  function onOverlayKeydown(e: KeyboardEvent) {
+  function onSignatureKeydown(e: KeyboardEvent, id: string) {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      editorStore.removeSignature(id);
+      if (selectedSignatureId === id) selectedSignatureId = null;
+      return;
+    }
+
     if (!['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(e.key)) return;
     e.preventDefault();
 
-    const placement = $activeDocument?.placedSignature;
-    if (!placement) return;
+    const sig = $activeDocument?.placedSignatures.find((s) => s.id === id);
+    if (!sig) return;
 
     const rect = canvasEl.getBoundingClientRect();
     const dx = e.key === 'ArrowLeft' ? -KEYBOARD_MOVE_STEP : e.key === 'ArrowRight' ? KEYBOARD_MOVE_STEP : 0;
     const dy = e.key === 'ArrowUp' ? -KEYBOARD_MOVE_STEP : e.key === 'ArrowDown' ? KEYBOARD_MOVE_STEP : 0;
 
-    const x = clamp(placement.x + dx, 0, rect.width - placement.width);
-    const y = clamp(placement.y + dy, 0, rect.height - placement.height);
-    editorStore.updatePlacement({ x, y });
-    rememberPlacement({ ...placement, x, y });
+    const x = clamp(sig.x + dx, 0, rect.width - sig.width);
+    const y = clamp(sig.y + dy, 0, rect.height - sig.height);
+    editorStore.updateSignature(id, { x, y });
+    rememberPlacement({ ...sig, x, y });
   }
 
   // Resize via the corner handle, always preserving the signature's aspect ratio.
   const MIN_SIZE = 24;
   const KEYBOARD_RESIZE_STEP = 10;
-  let resizing = false;
+  let resizingSignatureId: string | null = null;
   let resizeStart: (PlacedSignature & { pointerX: number; pointerY: number }) | null = null;
+
+  function onSignatureResizeKeydown(e: KeyboardEvent, id: string) {
+    if (!['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const sig = $activeDocument?.placedSignatures.find((s) => s.id === id);
+    if (!sig) return;
+
+    const grow = e.key === 'ArrowUp' || e.key === 'ArrowRight';
+    const { width, height } = clampedResize(sig.width + (grow ? KEYBOARD_RESIZE_STEP : -KEYBOARD_RESIZE_STEP), sig);
+    editorStore.updateSignature(id, { width, height });
+    rememberPlacement({ ...sig, width, height });
+  }
 
   // Shared by the pointer-drag and keyboard paths: grows/shrinks toward
   // `targetWidth` from `origin`'s position, preserving aspect ratio and
@@ -242,44 +248,36 @@
     return { width, height };
   }
 
-  function onResizePointerDown(e: PointerEvent) {
+  function onSignatureResizePointerDown(e: PointerEvent, id: string) {
     e.stopPropagation();
-    const placement = $activeDocument?.placedSignature;
-    if (!placement) return;
-    resizing = true;
+    const sig = $activeDocument?.placedSignatures.find((s) => s.id === id);
+    if (!sig) return;
+    resizingSignatureId = id;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    resizeStart = { pointerX: e.clientX, pointerY: e.clientY, ...placement };
+    resizeStart = { pointerX: e.clientX, pointerY: e.clientY, ...sig };
   }
 
-  function onResizePointerMove(e: PointerEvent) {
-    if (!resizing || !resizeStart) return;
+  function onSignatureResizePointerMove(e: PointerEvent, id: string) {
+    if (resizingSignatureId !== id || !resizeStart) return;
     const deltaX = e.clientX - resizeStart.pointerX;
     const { width, height } = clampedResize(resizeStart.width + deltaX, resizeStart);
-    editorStore.updatePlacement({ width, height });
+    editorStore.updateSignature(id, { width, height });
   }
 
-  // Keyboard equivalent of the drag handle, for anyone who can't drag the
-  // pointer-only resize handle: Right/Up grows, Left/Down shrinks.
-  function onResizeKeydown(e: KeyboardEvent) {
-    if (!['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(e.key)) return;
-    e.preventDefault();
-    e.stopPropagation();
-
-    const placement = $activeDocument?.placedSignature;
-    if (!placement) return;
-
-    const grow = e.key === 'ArrowUp' || e.key === 'ArrowRight';
-    const { width, height } = clampedResize(placement.width + (grow ? KEYBOARD_RESIZE_STEP : -KEYBOARD_RESIZE_STEP), placement);
-    editorStore.updatePlacement({ width, height });
-    rememberPlacement({ ...placement, width, height });
-  }
-
-  function onResizePointerUp(e: PointerEvent) {
-    resizing = false;
+  function onSignatureResizePointerUp(e: PointerEvent) {
+    if (resizingSignatureId) {
+      const sig = $activeDocument?.placedSignatures.find((s) => s.id === resizingSignatureId);
+      if (sig) rememberPlacement(sig);
+    }
+    resizingSignatureId = null;
     resizeStart = null;
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    const placement = $activeDocument?.placedSignature;
-    if (placement) rememberPlacement(placement);
+  }
+
+  function removeSignature(e: MouseEvent, id: string) {
+    e.stopPropagation();
+    editorStore.removeSignature(id);
+    if (selectedSignatureId === id) selectedSignatureId = null;
   }
 
   // Redaction: draw-a-box mode. While active, a plain pointer drag directly on
@@ -450,86 +448,86 @@
     <div class="p-4 text-sm text-red-600">{error}</div>
   {/if}
 
-  {#if placementOnCurrentPage && $signatureStore.previewUrl}
-    <!-- role="group" is the closest ARIA fit for a movable/resizable object
-         (it groups the resize handle and remove button), but that role is
-         classified as non-interactive by Svelte's a11y check even though
-         this element is deliberately focusable and arrow-key operable. -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      data-placed-signature
-      role="group"
-      tabindex="0"
-      aria-label="Placed signature — use arrow keys to move, drag the corner handle to resize"
-      class="absolute cursor-move touch-none {selected ? 'ring-2 ring-blue-400/70 bg-blue-100/10' : ''}"
-      style:left="{placementOnCurrentPage.x}px"
-      style:top="{placementOnCurrentPage.y}px"
-      style:width="{placementOnCurrentPage.width}px"
-      style:height="{placementOnCurrentPage.height}px"
-      onpointerdown={onOverlayPointerDown}
-      onpointermove={onOverlayPointerMove}
-      onpointerup={onOverlayPointerUp}
-      onfocus={() => (selected = true)}
-      onkeydown={onOverlayKeydown}
-    >
-      <img
-        src={$signatureStore.previewUrl}
-        alt="Placed signature"
-        draggable="false"
-        class="h-full w-full select-none object-contain"
-      />
+  {#each signaturesOnCurrentPage as sig (sig.id)}
+    {@const isSelected = selectedSignatureId === sig.id}
+    {#if $signatureStore.previewUrl}
+      <!-- role="group" is the closest ARIA fit for a movable/resizable object
+           (it groups the resize handle and remove button), but that role is
+           classified as non-interactive by Svelte's a11y check even though
+           this element is deliberately focusable and arrow-key operable. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        data-placed-signature={sig.id}
+        role="group"
+        tabindex="0"
+        aria-label="Placed signature — use arrow keys to move, drag the corner handle to resize"
+        class="absolute cursor-move touch-none {isSelected ? 'ring-2 ring-blue-400/70 bg-blue-100/10' : ''}"
+        style:left="{sig.x}px"
+        style:top="{sig.y}px"
+        style:width="{sig.width}px"
+        style:height="{sig.height}px"
+        onpointerdown={(e) => onSignaturePointerDown(e, sig.id)}
+        onpointermove={(e) => onSignaturePointerMove(e, sig.id)}
+        onpointerup={onSignaturePointerUp}
+        onfocus={() => (selectedSignatureId = sig.id)}
+        onkeydown={(e) => onSignatureKeydown(e, sig.id)}
+      >
+        <img
+          src={$signatureStore.previewUrl}
+          alt="Placed signature"
+          draggable="false"
+          class="h-full w-full select-none object-contain"
+        />
 
-      {#if previewLines.length > 0}
-        <div
-          class="pointer-events-none absolute inset-0 flex select-none flex-col overflow-hidden leading-tight"
-          style:font-size="{placementOnCurrentPage.height * $watermarkFontScale}px"
-          style:color={$watermarkColor}
-          style:opacity={$watermarkOpacity}
-          style:padding="{placementOnCurrentPage.height * 0.06}px"
-          style:justify-content={previewAlign.justifyContent}
-          style:align-items={previewAlign.alignItems}
-          style:text-align={previewAlign.textAlign}
-        >
-          {#each previewLines as line}
-            <div>{line}</div>
-          {/each}
-        </div>
-      {/if}
+        {#if previewLines.length > 0}
+          <div
+            class="pointer-events-none absolute inset-0 flex select-none flex-col overflow-hidden leading-tight"
+            style:font-size="{sig.height * $watermarkFontScale}px"
+            style:color={$watermarkColor}
+            style:opacity={$watermarkOpacity}
+            style:padding="{sig.height * 0.06}px"
+            style:justify-content={previewAlign.justifyContent}
+            style:align-items={previewAlign.alignItems}
+            style:text-align={previewAlign.textAlign}
+          >
+            {#each previewLines as line}
+              <div>{line}</div>
+            {/each}
+          </div>
+        {/if}
 
-      {#if selected}
-        <div
-          role="button"
-          tabindex="0"
-          aria-label="Resize signature"
-          title="Resize signature (drag, or use arrow keys)"
-          class="absolute -bottom-1.5 -right-1.5 h-3.5 w-3.5 cursor-se-resize touch-none rounded-full
-            border border-white bg-blue-500 shadow focus:outline-none focus:ring-2 focus:ring-blue-400"
-          onpointerdown={onResizePointerDown}
-          onpointermove={onResizePointerMove}
-          onpointerup={onResizePointerUp}
-          onkeydown={onResizeKeydown}
-        ></div>
+        {#if isSelected}
+          <div
+            role="button"
+            tabindex="0"
+            aria-label="Resize signature"
+            title="Resize signature (drag, or use arrow keys)"
+            class="absolute -bottom-1.5 -right-1.5 h-3.5 w-3.5 cursor-se-resize touch-none rounded-full
+              border border-white bg-blue-500 shadow focus:outline-none focus:ring-2 focus:ring-blue-400"
+            onpointerdown={(e) => onSignatureResizePointerDown(e, sig.id)}
+            onpointermove={(e) => onSignatureResizePointerMove(e, sig.id)}
+            onpointerup={onSignatureResizePointerUp}
+            onkeydown={(e) => onSignatureResizeKeydown(e, sig.id)}
+          ></div>
 
-        <button
-          type="button"
-          aria-label="Remove placed signature"
-          title="Remove placed signature"
-          class="absolute -right-1.5 -top-1.5 flex h-5 w-5 touch-none items-center justify-center rounded-full
-            border border-white bg-red-500 text-white shadow transition-colors hover:bg-red-600"
-          onpointerdown={(e) => e.stopPropagation()}
-          onclick={(e) => {
-            e.stopPropagation();
-            editorStore.clearPlacement();
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="h-3 w-3">
-            <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18" />
-          </svg>
-        </button>
-      {/if}
-    </div>
-  {/if}
+          <button
+            type="button"
+            aria-label="Remove placed signature"
+            title="Remove placed signature"
+            class="absolute -right-1.5 -top-1.5 flex h-5 w-5 touch-none items-center justify-center rounded-full
+              border border-white bg-red-500 text-white shadow transition-colors hover:bg-red-600"
+            onpointerdown={(e) => e.stopPropagation()}
+            onclick={(e) => removeSignature(e, sig.id)}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="h-3 w-3">
+              <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        {/if}
+      </div>
+    {/if}
+  {/each}
 
   {#each redactionsOnCurrentPage as box (box.id)}
     {@const isSelected = selectedRedactionId === box.id}

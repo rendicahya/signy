@@ -28,6 +28,7 @@ export async function placementFromRatioForDocument(
   const height = ratio.heightRatio * viewport.height;
 
   return {
+    id: crypto.randomUUID(),
     width,
     height,
     x: clamp(ratio.xRatio * viewport.width, 0, viewport.width - width),

@@ -46,15 +46,7 @@
     await signatureStore.upload(file);
   }
 
-  // Only offer to reuse the last placement when the active document's
-  // current page doesn't already have one of its own.
-  const placementOnCurrentPage = $derived.by(() => {
-    const doc = $activeDocument;
-    if (!doc?.placedSignature) return null;
-    return doc.placedSignature.page === doc.pageNumber ? doc.placedSignature : null;
-  });
-
-  const canUseLastPosition = $derived(!placementOnCurrentPage && !!$lastPlacement);
+  const canUseLastPosition = $derived(!!$lastPlacement);
 
   let applyingLastPosition = $state(false);
 
@@ -85,8 +77,12 @@
 
   function placeAtDefault() {
     // Simple click-to-place fallback for non-drag interactions (e.g. touch).
+    const doc = $activeDocument;
+    if (!doc) return;
     const { width, height } = fitWithinBox(sig.naturalWidth, sig.naturalHeight);
-    editorStore.placeSignature({ x: 40, y: 40, width, height, page: $activeDocument?.pageNumber ?? 1 });
+    // Cascade position so repeated clicks don't stack exactly on top of each other.
+    const offset = (doc.placedSignatures.length % 6) * 24;
+    editorStore.addSignature({ x: 40 + offset, y: 40 + offset, width, height, page: doc.pageNumber });
   }
 
   async function useLastPosition() {
@@ -104,7 +100,8 @@
         doc.rotation,
         ratio,
       );
-      editorStore.placeSignature(placement);
+      const { id, ...rest } = placement;
+      editorStore.addSignature(rest);
     } finally {
       applyingLastPosition = false;
     }
@@ -140,7 +137,8 @@
           documents[i].rotation,
           ratio,
         );
-        editorStore.setPlacementForDocument(documents[i].id, placement);
+        const { id, ...rest } = placement;
+        editorStore.setSignaturesForDocument(documents[i].id, [rest]);
       }
     } catch (e) {
       applyToAllError = e instanceof Error ? e.message : 'Failed to apply to all documents';

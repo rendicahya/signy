@@ -27,7 +27,7 @@
   function closeDocument(e: MouseEvent, id: string) {
     e.stopPropagation();
     const doc = $editorStore.documents.find((d) => d.id === id);
-    const hasUnsavedWork = doc && (doc.placedSignature || doc.redactions.length > 0) && !doc.exported;
+    const hasUnsavedWork = doc && (doc.placedSignatures.length > 0 || doc.redactions.length > 0) && !doc.exported;
     if (hasUnsavedWork) {
       pendingCloseId = id;
     } else {
@@ -68,7 +68,7 @@
       onclick={() => selectDocument(doc.id)}
       onkeydown={(e) => onTabKeydown(e, doc.id)}
     >
-      {#if doc.placedSignature || doc.redactions.length > 0}
+      {#if doc.placedSignatures.length > 0 || doc.redactions.length > 0}
         <svg
           viewBox="0 0 24 24"
           fill="none"

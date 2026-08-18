@@ -10,9 +10,9 @@ import type { PlacementRatio } from '../../stores/placement';
 
 export interface ExportParams {
   pdfFile: File;
-  /** Present only if a signature should be drawn onto the page — signing is optional now that redaction can stand alone. */
+  /** Present only if signatures should be drawn onto the pages — signing is optional now that redaction can stand alone. */
   signatureBlob?: Blob;
-  placement?: PlacedSignature;
+  placements?: PlacedSignature[];
   /** Canvas render scale used by PDFViewer, needed to map pixels back to PDF points. */
   renderScale: number;
   /** Additional rotation (0/90/180/270) the user chose in the editor, on top of each page's own rotation. */
@@ -39,7 +39,7 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
   const {
     pdfFile,
     signatureBlob,
-    placement,
+    placements = [],
     renderScale,
     rotation = 0,
     watermark,
@@ -51,43 +51,42 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
   const pdfjsDoc = await loadPdf(pdfFile);
   const pdfDoc = await PDFDocument.load(pdfBytes);
 
-  // Flatten any redacted pages — including the page the signature lands on,
-  // if it's one of them — before drawing the signature, so the signature
-  // ends up as a normal image on top of the flattened page rather than being
-  // wiped out by it.
+  // Flatten any redacted pages — including pages with signatures — before
+  // drawing signatures, so each signature ends up as a normal image on top of
+  // the flattened page rather than being wiped out by it.
   await applyRedactions(pdfDoc, pdfjsDoc, redactions, renderScale, rotation);
 
-  if (placement && signatureBlob) {
+  if (signatureBlob && placements.length > 0) {
     const watermarkedBlob = await applyVisibleWatermark(signatureBlob, watermark);
     const pngBytes = await blobToBytes(watermarkedBlob);
-
-    // `placement` is in canvas pixel coordinates for whatever page/scale/rotation
-    // PDFViewer was displaying. Re-derive the exact same pdf.js viewport for that
-    // page here and use its built-in point conversion — far less error-prone
-    // than reimplementing the rotation trigonometry by hand, and it stays
-    // correct for all four 90°-multiple rotations.
-    const pdfjsPage = await pdfjsDoc.getPage(placement.page);
-    const totalRotation = getTotalRotation(pdfjsPage, rotation);
-    const viewport = pdfjsPage.getViewport({ scale: renderScale, rotation: totalRotation });
-
-    const [x1, y1] = viewport.convertToPdfPoint(placement.x, placement.y);
-    const [x2, y2] = viewport.convertToPdfPoint(placement.x + placement.width, placement.y + placement.height);
-
-    const x = Math.min(x1, x2);
-    const y = Math.min(y1, y2);
-    const width = Math.abs(x2 - x1);
-    const height = Math.abs(y2 - y1);
-
-    const targetPage = pdfDoc.getPage(placement.page - 1); // pdf-lib pages are 0-indexed
     const pngImage = await pdfDoc.embedPng(pngBytes);
 
-    targetPage.drawImage(pngImage, { x, y, width, height });
+    for (const placement of placements) {
+      // Each `placement` is in canvas pixel coordinates for whatever page/scale/rotation
+      // PDFViewer was displaying. Re-derive the exact same pdf.js viewport for that
+      // page here and use its built-in point conversion — far less error-prone
+      // than reimplementing the rotation trigonometry by hand, and it stays
+      // correct for all four 90°-multiple rotations.
+      const pdfjsPage = await pdfjsDoc.getPage(placement.page);
+      const totalRotation = getTotalRotation(pdfjsPage, rotation);
+      const viewport = pdfjsPage.getViewport({ scale: renderScale, rotation: totalRotation });
+
+      const [x1, y1] = viewport.convertToPdfPoint(placement.x, placement.y);
+      const [x2, y2] = viewport.convertToPdfPoint(placement.x + placement.width, placement.y + placement.height);
+
+      const x = Math.min(x1, x2);
+      const y = Math.min(y1, y2);
+      const width = Math.abs(x2 - x1);
+      const height = Math.abs(y2 - y1);
+
+      const targetPage = pdfDoc.getPage(placement.page - 1); // pdf-lib pages are 0-indexed
+      targetPage.drawImage(pngImage, { x, y, width, height });
+    }
   }
 
   // The rotation the user chose represents "this scan is sideways" and is
   // applied to every page uniformly (each relative to its own existing
-  // rotation), so the whole exported document keeps a consistent orientation
-  // — not just the page that got signed.
+  // rotation), so the whole exported document keeps a consistent orientation.
   if (rotation !== 0) {
     for (const page of pdfDoc.getPages()) {
       const current = page.getRotation().angle;
@@ -164,21 +163,22 @@ export function printPdfBytes(bytes: Uint8Array): void {
 }
 
 /**
- * Resolves what placement to use for a document: its own manual placement if
- * the user positioned one, otherwise the last-used ratio applied to page 1 —
- * matching the "Use last position" shortcut in the editor. Returns null if
- * neither is available, meaning this document should be skipped.
+ * Resolves what placements to use for a document: its own manual placements if
+ * the user positioned any, otherwise the last-used ratio applied to page 1 —
+ * matching the "Use last position" shortcut in the editor. Returns an empty
+ * array if neither is available, meaning no signatures will be drawn.
  */
-export async function resolvePlacement(
+export async function resolvePlacements(
   doc: PdfDocumentState,
   renderScale: number,
   lastPlacementRatio: PlacementRatio | null,
-): Promise<PlacedSignature | null> {
-  if (doc.placedSignature) return doc.placedSignature;
-  if (!lastPlacementRatio) return null;
+): Promise<PlacedSignature[]> {
+  if (doc.placedSignatures.length > 0) return doc.placedSignatures;
+  if (!lastPlacementRatio) return [];
 
   const pdfjsDoc = await loadPdf(doc.file);
-  return placementFromRatioForDocument(pdfjsDoc, 1, renderScale, doc.rotation, lastPlacementRatio);
+  const placement = await placementFromRatioForDocument(pdfjsDoc, 1, renderScale, doc.rotation, lastPlacementRatio);
+  return [placement];
 }
 
 export interface BulkExportResult {
@@ -206,16 +206,16 @@ export async function exportAllAsZip(
   const usedNames = new Set<string>();
 
   for (const doc of documents) {
-    const placement = signatureBlob ? await resolvePlacement(doc, renderScale, lastPlacementRatio) : null;
-    if (!placement && doc.redactions.length === 0) {
+    const placements = signatureBlob ? await resolvePlacements(doc, renderScale, lastPlacementRatio) : [];
+    if (placements.length === 0 && doc.redactions.length === 0) {
       skipped.push(doc.file.name);
       continue;
     }
 
     const bytes = await exportSignedPdf({
       pdfFile: doc.file,
-      signatureBlob: placement ? (signatureBlob ?? undefined) : undefined,
-      placement: placement ?? undefined,
+      signatureBlob: placements.length > 0 ? (signatureBlob ?? undefined) : undefined,
+      placements: placements.length > 0 ? placements : undefined,
       renderScale,
       rotation: doc.rotation,
       watermark,
