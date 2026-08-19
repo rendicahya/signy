@@ -180,13 +180,9 @@
         />
       </button>
 
-      <label class="flex items-center justify-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-400 dark:hover:bg-blue-900 cursor-pointer">
-        <input
-          type="checkbox"
-          bind:checked={$clickToPlaceMode}
-          class="rounded"
-        />
-        Click to place mode
+      <label class="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+        <input type="checkbox" bind:checked={$clickToPlaceMode} class="rounded" />
+        Click-to-place mode
       </label>
     </div>
 

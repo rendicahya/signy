@@ -24,6 +24,7 @@
   let pdfDoc: PdfDocument | null = $state(null);
   let error: string | null = $state(null);
   let isDragOver = $state(false);
+  let cursorPos = $state({ x: 0, y: 0 });
 
   // Live preview of the watermark text, kept in sync with the export logic in lib/watermark/visible.ts.
   const previewLines = $derived(
@@ -144,6 +145,11 @@
     const id = editorStore.addSignature(placement);
     rememberPlacement({ ...placement, id });
     selectedSignatureId = id;
+  }
+
+  function onCanvasMouseMove(e: PointerEvent) {
+    const rect = canvasEl.getBoundingClientRect();
+    cursorPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
   function onCanvasClick(e: PointerEvent) {
@@ -462,9 +468,29 @@
   <canvas
     bind:this={canvasEl}
     class="rounded-lg shadow-lg"
-    class:cursor-crosshair={$redactMode || $clickToPlaceMode}
+    class:cursor-crosshair={$redactMode}
     onpointerdown={onCanvasClick}
+    onpointermove={onCanvasMouseMove}
   ></canvas>
+
+  {#if $clickToPlaceMode && !$redactMode && $signatureStore.previewUrl}
+    {@const sig = $signatureStore}
+    {@const { width, height } = fitWithinBox(sig.naturalWidth, sig.naturalHeight)}
+    <div
+      class="pointer-events-none absolute rounded-lg opacity-60"
+      style:left="{cursorPos.x - width / 2}px"
+      style:top="{cursorPos.y - height / 2}px"
+      style:width="{width}px"
+      style:height="{height}px"
+    >
+      <img
+        src={$signatureStore.previewUrl}
+        alt="Signature preview"
+        draggable="false"
+        class="h-full w-full select-none object-contain border-2 border-blue-400 rounded-lg"
+      />
+    </div>
+  {/if}
 
   {#if error}
     <div class="p-4 text-sm text-red-600">{error}</div>
