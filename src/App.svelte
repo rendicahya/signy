@@ -156,6 +156,7 @@
   // focus, so native input/select behavior (e.g. arrow keys inside the page
   // dropdown) is never overridden.
   //  - Ctrl/Cmd+B: toggle the page sidebar (VS Code convention).
+  //  - Ctrl/Cmd+Z: undo. Ctrl/Cmd+Shift+Z (or Ctrl+Y): redo.
   //  - Left/Right: previous/next page.
   //  - Ctrl/Cmd+Left/Right: previous/next document.
   function onGlobalKeydown(e: KeyboardEvent) {
@@ -187,6 +188,19 @@
     if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
       e.preventDefault();
       togglePageSidebar();
+      return;
+    }
+
+    if (mod && !e.altKey && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) editorStore.redo();
+      else editorStore.undo();
+      return;
+    }
+
+    if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      editorStore.redo();
       return;
     }
 

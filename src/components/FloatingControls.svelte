@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { editorStore, activeDocument, DEFAULT_RENDER_SCALE } from '../stores/editor';
+  import { editorStore, activeDocument, canUndo, canRedo, DEFAULT_RENDER_SCALE } from '../stores/editor';
   import { redactMode } from '../stores/redact';
   import { textToolMode } from '../stores/textTool';
   import { clickToPlaceMode } from '../stores/clickToPlace';
@@ -109,6 +109,39 @@
   <div class="pointer-events-auto flex max-w-full items-center gap-3 overflow-x-auto rounded-full border
     border-neutral-200 bg-white/90 px-2 py-1.5 shadow-lg backdrop-blur dark:border-neutral-800
     dark:bg-neutral-900/90">
+    <div class="flex items-center gap-1 rounded-full border border-neutral-200 px-1 py-1 dark:border-neutral-800">
+      <button
+        type="button"
+        aria-label="Undo"
+        title="Undo (Ctrl+Z)"
+        class="flex h-7 w-7 items-center justify-center rounded-full text-neutral-600
+          hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-30 dark:text-neutral-300
+          dark:hover:bg-neutral-800"
+        disabled={!$canUndo}
+        onclick={() => editorStore.undo()}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        aria-label="Redo"
+        title="Redo (Ctrl+Shift+Z)"
+        class="flex h-7 w-7 items-center justify-center rounded-full text-neutral-600
+          hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-30 dark:text-neutral-300
+          dark:hover:bg-neutral-800"
+        disabled={!$canRedo}
+        onclick={() => editorStore.redo()}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 15l6-6m0 0-6-6m6 6H9a6 6 0 0 0 0 12h3" />
+        </svg>
+      </button>
+    </div>
+
+    <div class="h-5 w-px shrink-0 bg-neutral-200 dark:bg-neutral-800"></div>
+
     <div class="flex items-center gap-1 rounded-full border border-neutral-200 px-1 py-1 dark:border-neutral-800">
       <button
         type="button"

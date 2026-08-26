@@ -182,6 +182,28 @@ async function rotateGeometry<T extends { x: number; y: number; width: number; h
   };
 }
 
+/** The subset of a document's state that undo/redo tracks — everything the
+ * user places or changes on the page, but not navigation (page number),
+ * loading state (pageCount), or the "saved yet" flag. */
+interface DocSnapshot {
+  placedSignatures: PlacedSignature[];
+  redactions: RedactionBox[];
+  texts: PlacedText[];
+  rotation: number;
+}
+
+interface DocHistory {
+  past: DocSnapshot[];
+  future: DocSnapshot[];
+}
+
+const MAX_HISTORY = 50;
+// Repeated calls that share an action key within this window collapse into
+// the single history entry taken before the first of them — otherwise every
+// pointermove during a drag, every tick of a range slider, or every repeat
+// of a held-down arrow key would each get their own undo step.
+const HISTORY_COALESCE_MS = 600;
+
 function createEditorStore() {
   const { subscribe, update, set } = writable<EditorState>({
     documents: [],
@@ -189,6 +211,61 @@ function createEditorStore() {
     renderScale: DEFAULT_RENDER_SCALE,
     hasExported: false,
   });
+
+  // Undo/redo history lives outside the reactive store — nothing about it
+  // needs to drive rendering on its own, only canUndo/canRedo do, and those
+  // are answered on demand from historyTick below. Keyed by document id so
+  // each open document/tab keeps its own independent history.
+  const histories = new Map<string, DocHistory>();
+  const lastActionKeys = new Map<string, { key: string; time: number }>();
+  const historyTick = writable(0);
+
+  function getHistory(id: string): DocHistory {
+    let h = histories.get(id);
+    if (!h) {
+      h = { past: [], future: [] };
+      histories.set(id, h);
+    }
+    return h;
+  }
+
+  function snapshotOf(doc: PdfDocumentState): DocSnapshot {
+    return {
+      placedSignatures: doc.placedSignatures,
+      redactions: doc.redactions,
+      texts: doc.texts,
+      rotation: doc.rotation,
+    };
+  }
+
+  function applySnapshot(doc: PdfDocumentState, snap: DocSnapshot): PdfDocumentState {
+    return { ...doc, ...snap, exported: false };
+  }
+
+  // Records `doc`'s state *before* a mutation identified by `actionKey`.
+  // Calls sharing the same actionKey within HISTORY_COALESCE_MS of each
+  // other are treated as one continuous gesture (a drag, a resize, a slider
+  // being dragged) and don't get their own history entry — only the first
+  // one does. Pass a fresh/unique key (e.g. via crypto.randomUUID()) for
+  // actions that should never coalesce, like each individual add/remove.
+  function recordHistory(id: string, actionKey: string, doc: PdfDocumentState) {
+    const now = Date.now();
+    const last = lastActionKeys.get(id);
+    const coalescing = !!last && last.key === actionKey && now - last.time < HISTORY_COALESCE_MS;
+    if (!coalescing) {
+      const h = getHistory(id);
+      h.past.push(snapshotOf(doc));
+      if (h.past.length > MAX_HISTORY) h.past.shift();
+      h.future = [];
+    }
+    lastActionKeys.set(id, { key: actionKey, time: now });
+    historyTick.update((n) => n + 1);
+  }
+
+  function clearHistory(id: string) {
+    histories.delete(id);
+    lastActionKeys.delete(id);
+  }
 
   // Synchronous snapshot of the current state, for the rare action (rotate)
   // that needs to read-before an `await` rather than just transform via `update`.
@@ -198,6 +275,11 @@ function createEditorStore() {
       value = v;
     })();
     return value!;
+  }
+
+  function recordActiveHistory(actionKey: string) {
+    const doc = getActiveDocument(currentState());
+    if (doc) recordHistory(doc.id, actionKey, doc);
   }
 
   // A document's real page count isn't known until pdf.js has actually
@@ -215,6 +297,8 @@ function createEditorStore() {
 
   /** Replaces the whole document list, e.g. the initial upload. */
   function loadPdfs(files: File[]) {
+    histories.clear();
+    lastActionKeys.clear();
     const documents = files.map(createDocumentState);
     set({
       documents,
@@ -237,6 +321,7 @@ function createEditorStore() {
   }
 
   function removeDocument(id: string) {
+    clearHistory(id);
     update((state) => {
       const removedIndex = state.documents.findIndex((d) => d.id === id);
       if (removedIndex === -1) return state;
@@ -309,6 +394,7 @@ function createEditorStore() {
 
   function addSignature(placement: Omit<PlacedSignature, 'id'>): string {
     const id = crypto.randomUUID();
+    recordActiveHistory(`add-signature-${id}`);
     update((state) =>
       updateActiveDocument(state, (doc) => ({
         ...doc,
@@ -320,6 +406,7 @@ function createEditorStore() {
   }
 
   function removeSignature(id: string) {
+    recordActiveHistory(`remove-signature-${id}-${Date.now()}`);
     update((state) =>
       updateActiveDocument(state, (doc) => ({
         ...doc,
@@ -330,6 +417,7 @@ function createEditorStore() {
   }
 
   function updateSignature(id: string, partial: Partial<PlacedSignature>) {
+    recordActiveHistory(`update-signature-${id}`);
     update((state) =>
       updateActiveDocument(state, (doc) => ({
         ...doc,
@@ -356,6 +444,7 @@ function createEditorStore() {
   }
 
   function addRedaction(box: Omit<RedactionBox, 'id'>) {
+    recordActiveHistory(`add-redaction-${crypto.randomUUID()}`);
     update((state) =>
       updateActiveDocument(state, (doc) => ({
         ...doc,
@@ -366,6 +455,7 @@ function createEditorStore() {
   }
 
   function updateRedaction(id: string, partial: Partial<RedactionBox>) {
+    recordActiveHistory(`update-redaction-${id}`);
     update((state) =>
       updateActiveDocument(state, (doc) => ({
         ...doc,
@@ -376,6 +466,7 @@ function createEditorStore() {
   }
 
   function removeRedaction(id: string) {
+    recordActiveHistory(`remove-redaction-${id}-${Date.now()}`);
     update((state) =>
       updateActiveDocument(state, (doc) => ({
         ...doc,
@@ -403,6 +494,7 @@ function createEditorStore() {
 
   function addText(text: Omit<PlacedText, 'id'>): string {
     const id = crypto.randomUUID();
+    recordActiveHistory(`add-text-${id}`);
     update((state) =>
       updateActiveDocument(state, (doc) => ({
         ...doc,
@@ -414,6 +506,7 @@ function createEditorStore() {
   }
 
   function updateText(id: string, partial: Partial<PlacedText>) {
+    recordActiveHistory(`update-text-${id}`);
     update((state) =>
       updateActiveDocument(state, (doc) => ({
         ...doc,
@@ -424,6 +517,7 @@ function createEditorStore() {
   }
 
   function removeText(id: string) {
+    recordActiveHistory(`remove-text-${id}-${Date.now()}`);
     update((state) =>
       updateActiveDocument(state, (doc) => ({
         ...doc,
@@ -483,6 +577,8 @@ function createEditorStore() {
     const { renderScale } = state;
     const newRotation = (((oldRotation + delta) % 360) + 360) % 360;
 
+    recordHistory(id, `rotate-${crypto.randomUUID()}`, doc);
+
     const applyRotation = (placements: PlacedSignature[], boxes: RedactionBox[], newTexts: PlacedText[]) => {
       update((state) => ({
         ...state,
@@ -538,11 +634,47 @@ function createEditorStore() {
   }
 
   function reset() {
+    histories.clear();
+    lastActionKeys.clear();
     set({ documents: [], activeId: null, renderScale: DEFAULT_RENDER_SCALE, hasExported: false });
+  }
+
+  function undo() {
+    const doc = getActiveDocument(currentState());
+    if (!doc) return;
+    const h = getHistory(doc.id);
+    const prev = h.past.pop();
+    if (!prev) return;
+    h.future.push(snapshotOf(doc));
+    if (h.future.length > MAX_HISTORY) h.future.shift();
+    lastActionKeys.delete(doc.id); // whatever comes next shouldn't coalesce with actions from before the undo
+    update((state) => ({
+      ...state,
+      documents: state.documents.map((d) => (d.id === doc.id ? applySnapshot(d, prev) : d)),
+    }));
+    historyTick.update((n) => n + 1);
+  }
+
+  function redo() {
+    const doc = getActiveDocument(currentState());
+    if (!doc) return;
+    const h = getHistory(doc.id);
+    const next = h.future.pop();
+    if (!next) return;
+    h.past.push(snapshotOf(doc));
+    if (h.past.length > MAX_HISTORY) h.past.shift();
+    lastActionKeys.delete(doc.id);
+    update((state) => ({
+      ...state,
+      documents: state.documents.map((d) => (d.id === doc.id ? applySnapshot(d, next) : d)),
+    }));
+    historyTick.update((n) => n + 1);
   }
 
   return {
     subscribe,
+    historyTick,
+    getHistory,
     loadPdfs,
     addPdfs,
     removeDocument,
@@ -574,6 +706,8 @@ function createEditorStore() {
     rotateLeft,
     rotateRight,
     markExported,
+    undo,
+    redo,
     reset,
   };
 }
@@ -582,3 +716,13 @@ export const editorStore = createEditorStore();
 
 /** The document currently shown in the editor, if any. */
 export const activeDocument = derived(editorStore, getActiveDocument);
+
+/** Whether the active document has an undo/redo step available — drives the toolbar's Undo/Redo buttons. */
+export const canUndo = derived(
+  [editorStore, editorStore.historyTick],
+  ([$editor]) => (!$editor.activeId ? false : editorStore.getHistory($editor.activeId).past.length > 0),
+);
+export const canRedo = derived(
+  [editorStore, editorStore.historyTick],
+  ([$editor]) => (!$editor.activeId ? false : editorStore.getHistory($editor.activeId).future.length > 0),
+);
