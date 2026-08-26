@@ -70,6 +70,7 @@
 
       const bytes = await exportSignedPdf({
         pdfFile: doc.file,
+        documentId: doc.id,
         signatureBlob,
         placements,
         renderScale: $editorStore.renderScale,
@@ -99,6 +100,7 @@
 
       const bytes = await exportSignedPdf({
         pdfFile: doc.file,
+        documentId: doc.id,
         signatureBlob,
         placements,
         renderScale: $editorStore.renderScale,
@@ -129,6 +131,7 @@
 
       const bytes = await exportSignedPdf({
         pdfFile: doc.file,
+        documentId: doc.id,
         signatureBlob,
         placements,
         renderScale: $editorStore.renderScale,

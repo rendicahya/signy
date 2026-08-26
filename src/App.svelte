@@ -9,6 +9,7 @@
   import ExportButton from './components/ExportButton.svelte';
   import ThemeToggle from './components/ThemeToggle.svelte';
   import UpdateToast from './components/UpdateToast.svelte';
+  import VerifyPage from './components/VerifyPage.svelte';
   import { editorStore, activeDocument } from './stores/editor';
   import { theme } from './stores/theme';
   import { pageSidebarOpen, togglePageSidebar } from './stores/layout';
@@ -24,6 +25,13 @@
   let addPdfsError: string | null = $state(null);
   let isPageDragging = $state(false);
   let pageDragDepth = 0;
+
+  // The Verify page is a separate, stateless screen reachable via a plain
+  // URL hash — no router dependency needed for one extra page on a static,
+  // GitHub-Pages-hosted SPA, and a hash link stays shareable/bookmarkable.
+  let hash = $state(window.location.hash);
+  window.addEventListener('hashchange', () => (hash = window.location.hash));
+  const showVerifyPage = $derived(hash === '#/verify');
 
   const editor = $derived($editorStore);
   const active = $derived($activeDocument);
@@ -221,9 +229,9 @@
 
 <main
   class="min-h-screen"
-  class:flex={readyForEditor}
-  class:h-screen={readyForEditor}
-  class:flex-col={readyForEditor}
+  class:flex={readyForEditor && !showVerifyPage}
+  class:h-screen={readyForEditor && !showVerifyPage}
+  class:flex-col={readyForEditor && !showVerifyPage}
   ondragenter={onPageDragEnter}
   ondragover={onPageDragOver}
   ondragleave={onPageDragLeave}
@@ -231,6 +239,9 @@
 >
   <UpdateToast />
 
+  {#if showVerifyPage}
+    <VerifyPage />
+  {:else}
   {#if isPageDragging}
     <div class="pointer-events-none fixed inset-4 z-50 flex items-center justify-center rounded-3xl border-4
       border-dashed border-blue-500 bg-blue-50/80 backdrop-blur-sm dark:bg-blue-950/80">
@@ -256,6 +267,11 @@
           </svg>
           100% local — your files never leave this device
         </div>
+        <p class="mt-3 text-xs">
+          <a href="#/verify" class="text-neutral-400 hover:text-neutral-600 hover:underline dark:hover:text-neutral-200">
+            Have a signed PDF? Verify it →
+          </a>
+        </p>
       </div>
 
       {#if editor.documents.length === 0}
@@ -376,5 +392,6 @@
         </div>
       </aside>
     </div>
+  {/if}
   {/if}
 </main>

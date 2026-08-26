@@ -6,11 +6,14 @@ import { stripEmbeddedScripts } from './sanitize';
 import { applyRedactions } from './redact';
 import { applyVisibleWatermark, type WatermarkOptions } from '../watermark/visible';
 import { drawTextBox, embedTextFont, hexToRgb } from './textRender';
+import { embedVerificationRecord } from './verification';
 import type { PdfDocumentState, PlacedSignature, PlacedText, RedactionBox } from '../../stores/editor';
 import type { PlacementRatio } from '../../stores/placement';
 
 export interface ExportParams {
   pdfFile: File;
+  /** Stable per-document id (PdfDocumentState.id) — embedded so the Verify page can identify this export later. */
+  documentId: string;
   /** Present only if signatures should be drawn onto the pages — signing is optional now that redaction can stand alone. */
   signatureBlob?: Blob;
   placements?: PlacedSignature[];
@@ -43,6 +46,7 @@ function blobToBytes(blob: Blob): Promise<Uint8Array> {
 export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array> {
   const {
     pdfFile,
+    documentId,
     signatureBlob,
     placements = [],
     renderScale,
@@ -149,14 +153,27 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
 
   if (stripScripts) stripEmbeddedScripts(pdfDoc);
 
+  // Tag every export — signed, redacted-only, or a bare pass-through — with a
+  // small local-only record the Verify page can read back later. See
+  // lib/pdf/verification.ts for what this does and doesn't guarantee.
+  const verificationRecord = {
+    documentId,
+    documentName: pdfFile.name,
+    signedAt: new Date().toISOString(),
+    watermarkText: watermark?.customText?.trim() || undefined,
+  };
+  embedVerificationRecord(pdfDoc, verificationRecord);
+
   // Extracting a single page happens last, after every placement/redaction/
   // text/rotation has already been drawn onto the full document — copyPages
   // carries a page's finished content over as-is, so this is just a trim,
-  // not a separate render pass.
+  // not a separate render pass. copyPages doesn't carry over the source
+  // document's Info dict, so the record needs re-embedding on the new doc.
   if (onlyPage !== undefined) {
     const singlePageDoc = await PDFDocument.create();
     const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [onlyPage - 1]);
     singlePageDoc.addPage(copiedPage);
+    embedVerificationRecord(singlePageDoc, verificationRecord);
     return singlePageDoc.save();
   }
 
@@ -294,6 +311,7 @@ export async function exportAllAsZip(
 
     const bytes = await exportSignedPdf({
       pdfFile: doc.file,
+      documentId: doc.id,
       signatureBlob: placements.length > 0 ? (signatureBlob ?? undefined) : undefined,
       placements: placements.length > 0 ? placements : undefined,
       renderScale,
@@ -346,6 +364,7 @@ export async function exportMergedPdf(
     const placements = signatureBlob ? await resolvePlacements(doc, renderScale, lastPlacementRatio) : [];
     const bytes = await exportSignedPdf({
       pdfFile: doc.file,
+      documentId: doc.id,
       signatureBlob: placements.length > 0 ? (signatureBlob ?? undefined) : undefined,
       placements: placements.length > 0 ? placements : undefined,
       renderScale,
