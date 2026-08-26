@@ -25,6 +25,8 @@ export interface ExportParams {
   redactions?: RedactionBox[];
   /** Typed text boxes to draw onto the exported PDF. */
   texts?: PlacedText[];
+  /** If set, the exported PDF contains only this 1-indexed page (with any placements/redactions/text still applied) instead of every page. */
+  onlyPage?: number;
 }
 
 function blobToBytes(blob: Blob): Promise<Uint8Array> {
@@ -49,6 +51,7 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
     stripScripts = false,
     redactions = [],
     texts = [],
+    onlyPage,
   } = params;
 
   const pdfBytes = await blobToBytes(pdfFile);
@@ -146,12 +149,28 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
 
   if (stripScripts) stripEmbeddedScripts(pdfDoc);
 
+  // Extracting a single page happens last, after every placement/redaction/
+  // text/rotation has already been drawn onto the full document — copyPages
+  // carries a page's finished content over as-is, so this is just a trim,
+  // not a separate render pass.
+  if (onlyPage !== undefined) {
+    const singlePageDoc = await PDFDocument.create();
+    const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [onlyPage - 1]);
+    singlePageDoc.addPage(copiedPage);
+    return singlePageDoc.save();
+  }
+
   return pdfDoc.save();
 }
 
 export function signedFileName(originalFileName: string): string {
   const base = originalFileName.replace(/\.pdf$/i, '');
   return `${base}_signed.pdf`;
+}
+
+export function pageOnlyFileName(originalFileName: string, pageNumber: number): string {
+  const base = originalFileName.replace(/\.pdf$/i, '');
+  return `${base}_page${pageNumber}.pdf`;
 }
 
 function downloadBlob(blob: Blob, fileName: string): void {
@@ -166,11 +185,22 @@ function downloadBlob(blob: Blob, fileName: string): void {
 }
 
 export function downloadSignedPdf(bytes: Uint8Array, originalFileName: string): void {
-  downloadBlob(new Blob([bytes], { type: 'application/pdf' }), signedFileName(originalFileName));
+  downloadBlob(new Blob([bytes as BlobPart], { type: 'application/pdf' }), signedFileName(originalFileName));
+}
+
+export function downloadPageOnlyPdf(bytes: Uint8Array, originalFileName: string, pageNumber: number): void {
+  downloadBlob(
+    new Blob([bytes as BlobPart], { type: 'application/pdf' }),
+    pageOnlyFileName(originalFileName, pageNumber),
+  );
 }
 
 export function downloadZip(blob: Blob): void {
   downloadBlob(blob, `signy_signed_pdfs.zip`);
+}
+
+export function downloadMergedPdf(bytes: Uint8Array): void {
+  downloadBlob(new Blob([bytes as BlobPart], { type: 'application/pdf' }), 'signy_merged.pdf');
 }
 
 /**
@@ -288,4 +318,48 @@ export async function exportAllAsZip(
 
   const zipBlob = await zip.generateAsync({ type: 'blob' });
   return { zipBlob, exportedCount: documents.length - skipped.length, skipped };
+}
+
+/**
+ * Merges every given document — each with its own signature/redaction/text
+ * already applied — into a single PDF, in the given order. Unlike "Save All
+ * (ZIP)", a document with nothing signed/redacted/annotated is still
+ * included: merging is about combining pages into one file, not skipping
+ * untouched ones.
+ */
+export async function exportMergedPdf(
+  documents: PdfDocumentState[],
+  orderedIds: string[],
+  signatureBlob: Blob | null,
+  renderScale: number,
+  lastPlacementRatio: PlacementRatio | null,
+  watermark?: WatermarkOptions,
+  stripScripts?: boolean,
+): Promise<Uint8Array> {
+  const byId = new Map(documents.map((d) => [d.id, d]));
+  const merged = await PDFDocument.create();
+
+  for (const id of orderedIds) {
+    const doc = byId.get(id);
+    if (!doc) continue;
+
+    const placements = signatureBlob ? await resolvePlacements(doc, renderScale, lastPlacementRatio) : [];
+    const bytes = await exportSignedPdf({
+      pdfFile: doc.file,
+      signatureBlob: placements.length > 0 ? (signatureBlob ?? undefined) : undefined,
+      placements: placements.length > 0 ? placements : undefined,
+      renderScale,
+      rotation: doc.rotation,
+      watermark,
+      stripScripts,
+      redactions: doc.redactions,
+      texts: doc.texts,
+    });
+
+    const sourceDoc = await PDFDocument.load(bytes);
+    const copiedPages = await merged.copyPages(sourceDoc, sourceDoc.getPageIndices());
+    copiedPages.forEach((page) => merged.addPage(page));
+  }
+
+  return merged.save();
 }

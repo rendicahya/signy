@@ -14,15 +14,22 @@
   import {
     exportSignedPdf,
     downloadSignedPdf,
+    downloadPageOnlyPdf,
     exportAllAsZip,
     downloadZip,
+    exportMergedPdf,
+    downloadMergedPdf,
     resolvePlacements,
     printPdfBytes,
   } from '../lib/pdf/export';
+  import MergeOrderDialog from './MergeOrderDialog.svelte';
 
   let exportingOne = $state(false);
+  let exportingPageOnly = $state(false);
   let exportingAll = $state(false);
   let printing = $state(false);
+  let showMergeDialog = $state(false);
+  let merging = $state(false);
   let error: string | null = $state(null);
 
   function currentWatermark() {
@@ -78,6 +85,36 @@
       error = e instanceof Error ? e.message : 'Export failed';
     } finally {
       exportingOne = false;
+    }
+  }
+
+  async function onExportPageOnly() {
+    const doc = $activeDocument;
+    if (!doc) return;
+
+    exportingPageOnly = true;
+    error = null;
+    try {
+      const { placements, signatureBlob } = await resolveExportInputs(doc);
+
+      const bytes = await exportSignedPdf({
+        pdfFile: doc.file,
+        signatureBlob,
+        placements,
+        renderScale: $editorStore.renderScale,
+        rotation: doc.rotation,
+        watermark: currentWatermark(),
+        stripScripts: $stripEmbeddedScripts,
+        redactions: doc.redactions,
+        texts: doc.texts,
+        onlyPage: doc.pageNumber,
+      });
+      downloadPageOnlyPdf(bytes, doc.file.name, doc.pageNumber);
+      editorStore.markDocumentExported(doc.id);
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Export failed';
+    } finally {
+      exportingPageOnly = false;
     }
   }
 
@@ -150,6 +187,41 @@
       exportingAll = false;
     }
   }
+
+  function onOpenMergeDialog() {
+    error = null;
+    showMergeDialog = true;
+  }
+
+  function onCancelMerge() {
+    showMergeDialog = false;
+  }
+
+  async function onConfirmMerge(orderedIds: string[]) {
+    const documents = $editorStore.documents;
+    const sig = $signatureStore;
+
+    merging = true;
+    error = null;
+    try {
+      const bytes = await exportMergedPdf(
+        documents,
+        orderedIds,
+        sig.signature?.blob ?? null,
+        $editorStore.renderScale,
+        $lastPlacement,
+        currentWatermark(),
+        $stripEmbeddedScripts,
+      );
+      downloadMergedPdf(bytes);
+      documents.forEach((doc) => editorStore.markDocumentExported(doc.id));
+      showMergeDialog = false;
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Merge failed';
+    } finally {
+      merging = false;
+    }
+  }
 </script>
 
 <div class="flex flex-col gap-2">
@@ -203,6 +275,19 @@
     </button>
   </div>
 
+  {#if ($activeDocument?.pageCount ?? 1) > 1}
+    <button
+      type="button"
+      class="w-full rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700
+        transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50
+        dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+      disabled={exportingPageOnly}
+      onclick={onExportPageOnly}
+    >
+      {exportingPageOnly ? 'Saving…' : `Download This Page Only (${$activeDocument?.pageNumber ?? 1})`}
+    </button>
+  {/if}
+
   {#if $editorStore.documents.length > 1}
     <button
       type="button"
@@ -214,9 +299,29 @@
     >
       {exportingAll ? 'Zipping…' : 'Save All (ZIP)'}
     </button>
+
+    <button
+      type="button"
+      class="w-full rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700
+        transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50
+        dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+      disabled={merging}
+      onclick={onOpenMergeDialog}
+    >
+      Download All as One PDF
+    </button>
   {/if}
 </div>
 
 {#if error}
   <p class="mt-1 text-xs text-red-600">{error}</p>
+{/if}
+
+{#if showMergeDialog}
+  <MergeOrderDialog
+    documents={$editorStore.documents.map((doc) => ({ id: doc.id, name: doc.file.name }))}
+    {merging}
+    onConfirm={onConfirmMerge}
+    onCancel={onCancelMerge}
+  />
 {/if}
