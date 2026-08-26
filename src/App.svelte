@@ -13,6 +13,8 @@
   import { editorStore, activeDocument } from './stores/editor';
   import { theme } from './stores/theme';
   import { pageSidebarOpen, togglePageSidebar } from './stores/layout';
+  import { redactMode } from './stores/redact';
+  import { textToolMode } from './stores/textTool';
   import { isFileAccepted, formatFileSize, dedupeFiles, MAX_PDF_SIZE_BYTES } from './lib/utils/fileValidation';
   import { clearCachedPdf } from './lib/pdf/docCache';
 
@@ -164,6 +166,24 @@
     if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
 
     const mod = e.ctrlKey || e.metaKey;
+
+    // Escape backs out of whichever click-driven canvas mode is active.
+    // While actually typing into a text box, PDFViewer's own Escape handler
+    // on the textarea runs first and stops this event from ever reaching
+    // here (it commits the text rather than just dropping the mode) — this
+    // only fires for "mode is on but nothing's being edited right now".
+    if (e.key === 'Escape' && !mod && !e.shiftKey && !e.altKey) {
+      if ($redactMode) {
+        e.preventDefault();
+        redactMode.set(false);
+        return;
+      }
+      if ($textToolMode) {
+        e.preventDefault();
+        textToolMode.set(false);
+        return;
+      }
+    }
 
     if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
       e.preventDefault();

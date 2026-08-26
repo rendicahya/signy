@@ -561,7 +561,10 @@
     const rect = canvasEl.getBoundingClientRect();
     const width = Math.min(TEXT_DEFAULT_WIDTH, rect.width);
     const height = $defaultTextFontSize * 1.6;
-    const x = clamp(e.clientX - rect.left - width / 2, 0, rect.width - width);
+    // The click point becomes the box's left-center, not its center — text
+    // starts growing to the right from where the user clicked, matching how
+    // a cursor placement works in most text editors.
+    const x = clamp(e.clientX - rect.left, 0, rect.width - width);
     const y = clamp(e.clientY - rect.top - height / 2, 0, rect.height - height);
 
     const id = editorStore.addText({
@@ -904,6 +907,16 @@
           bind:value={textEditValue}
           onpointerdown={(e) => e.stopPropagation()}
           onblur={() => commitTextEdit(t.id)}
+          onkeydown={(e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            // Escape attaches whatever's typed (same rule as clicking away)
+            // and leaves Add Text mode entirely, rather than staying active
+            // for another box — matches Escape's usual meaning of "I'm done".
+            commitTextEdit(t.id);
+            textToolMode.set(false);
+          }}
           class="h-full w-full resize-none border border-dashed border-blue-400 bg-white/70 p-0
             outline-none dark:bg-neutral-900/70"
           style:font-family={FONT_FAMILY_CSS[t.fontFamily]}
@@ -983,7 +996,7 @@
           <input
             type="number"
             aria-label="Font size"
-            title="Font size"
+            title="Font size (scroll to adjust)"
             min={TEXT_FONT_SIZE_MIN}
             max={TEXT_FONT_SIZE_MAX}
             class="w-10 rounded border border-neutral-200 bg-transparent px-1 py-0.5 text-xs focus:outline-none
@@ -993,6 +1006,11 @@
               setTextStyle(t.id, {
                 fontSize: clamp(Number((e.target as HTMLInputElement).value), TEXT_FONT_SIZE_MIN, TEXT_FONT_SIZE_MAX),
               })}
+            onwheel={(e) => {
+              e.preventDefault();
+              const delta = e.deltaY < 0 ? 1 : -1;
+              setTextStyle(t.id, { fontSize: clamp(t.fontSize + delta, TEXT_FONT_SIZE_MIN, TEXT_FONT_SIZE_MAX) });
+            }}
           />
 
           <button
