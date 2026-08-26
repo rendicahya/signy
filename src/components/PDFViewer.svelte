@@ -35,6 +35,7 @@
   import { lastPlacement } from '../stores/placement';
   import { fitWithinBox } from '../lib/signature/layout';
   import { buildWatermarkLines } from '../lib/watermark/visible';
+  import { signatureSuggestion } from '../stores/signatureSuggestion';
 
   let canvasEl: HTMLCanvasElement;
   let wrapperEl: HTMLDivElement;
@@ -101,6 +102,29 @@
     if (!doc) return [];
     return doc.texts.filter((t) => t.page === doc.pageNumber);
   });
+
+  // The "Find Signature Spot" suggestion — only shown while it's scoped to
+  // the document/page currently on screen, so navigating away (or the
+  // document changing) doesn't leave a stale box floating in the wrong place.
+  const suggestion = $derived.by(() => {
+    const doc = $activeDocument;
+    const s = $signatureSuggestion;
+    if (!doc || !s || s.documentId !== doc.id || s.page !== doc.pageNumber) return null;
+    return s;
+  });
+
+  function placeSuggestedSignature() {
+    const s = suggestion;
+    if (!s) return;
+    const id = editorStore.addSignature({ x: s.x, y: s.y, width: s.width, height: s.height, page: s.page });
+    selectedSignatureId = id;
+    signatureSuggestion.set(null);
+  }
+
+  function dismissSuggestion(e: MouseEvent) {
+    e.stopPropagation();
+    signatureSuggestion.set(null);
+  }
 
   // The move/resize/remove controls only show while a signature is
   // "selected" — right after it's placed, or after the user clicks it again
@@ -784,6 +808,53 @@
         draggable="false"
         class="h-full w-full select-none object-contain border-2 border-blue-400 rounded-lg"
       />
+    </div>
+  {/if}
+
+  {#if suggestion && $signatureStore.previewUrl}
+    <div
+      role="button"
+      tabindex="0"
+      class="absolute cursor-pointer touch-none rounded-lg ring-2 ring-blue-400 ring-offset-2 animate-pulse"
+      style:left="{suggestion.x}px"
+      style:top="{suggestion.y}px"
+      style:width="{suggestion.width}px"
+      style:height="{suggestion.height}px"
+      title="Best guess — {suggestion.reason}. Click to place here."
+      aria-label="Suggested signature placement — {suggestion.reason}. Press Enter to place here."
+      onclick={placeSuggestedSignature}
+      onkeydown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          placeSuggestedSignature();
+        }
+      }}
+    >
+      <img
+        src={$signatureStore.previewUrl}
+        alt="Suggested signature placement"
+        draggable="false"
+        class="h-full w-full select-none object-contain opacity-70"
+      />
+      <button
+        type="button"
+        aria-label="Dismiss suggested placement"
+        title="Dismiss"
+        class="absolute -right-1.5 -top-1.5 flex h-5 w-5 touch-none items-center justify-center rounded-full
+          border border-white bg-neutral-500 text-white shadow transition-colors hover:bg-neutral-600"
+        onpointerdown={(e) => e.stopPropagation()}
+        onclick={dismissSuggestion}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="h-3 w-3">
+          <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
+      <span
+        class="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded-full
+          bg-blue-600 px-2 py-0.5 text-[10px] font-medium text-white shadow"
+      >
+        Click to place
+      </span>
     </div>
   {/if}
 

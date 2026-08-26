@@ -22,6 +22,8 @@
   import { fitWithinBox } from '../lib/signature/layout';
   import { getCachedPdf } from '../lib/pdf/docCache';
   import { placementFromRatioForDocument } from '../lib/pdf/placement';
+  import { findSignatureSpot } from '../lib/pdf/signatureDetect';
+  import { signatureSuggestion } from '../stores/signatureSuggestion';
   import { isFileAccepted, formatFileSize, MAX_SIGNATURE_SIZE_BYTES } from '../lib/utils/fileValidation';
 
   const sig = $derived($signatureStore);
@@ -85,6 +87,44 @@
     // Cascade position so repeated clicks don't stack exactly on top of each other.
     const offset = (doc.placedSignatures.length % 6) * 24;
     editorStore.addSignature({ x: 40 + offset, y: 40 + offset, width, height, page: doc.pageNumber });
+  }
+
+  // Best-effort scan of the current document's text for a likely signature
+  // spot (a blank line, or a "Signature"/"Tanda Tangan"/"TTD" label — see
+  // lib/pdf/signatureDetect.ts). Never places anything itself — it jumps to
+  // the page it found and leaves a "click to place here" suggestion for the
+  // user to confirm or dismiss in PDFViewer.
+  let detectingSpot = $state(false);
+  let detectSpotError: string | null = $state(null);
+
+  async function findSpot() {
+    const doc = $activeDocument;
+    if (!doc || !sig.signature) return;
+
+    detectingSpot = true;
+    detectSpotError = null;
+    signatureSuggestion.set(null);
+    try {
+      const pdfjsDoc = await getCachedPdf(doc.id, doc.file);
+      const spot = await findSignatureSpot(
+        pdfjsDoc,
+        $editorStore.renderScale,
+        doc.rotation,
+        doc.pageNumber,
+        sig.naturalWidth,
+        sig.naturalHeight,
+      );
+      if (!spot) {
+        detectSpotError = "Couldn't find a likely spot — try placing it manually.";
+        return;
+      }
+      if (spot.page !== doc.pageNumber) editorStore.goToPage(spot.page);
+      signatureSuggestion.set({ ...spot, documentId: doc.id });
+    } catch (e) {
+      detectSpotError = e instanceof Error ? e.message : 'Failed to scan the document';
+    } finally {
+      detectingSpot = false;
+    }
   }
 
   async function useLastPosition() {
@@ -192,6 +232,21 @@
         />
         Click-to-place mode
       </label>
+
+      <button
+        type="button"
+        title="Best-effort scan of the document's text for a likely signature spot — always asks before placing anything"
+        class="w-full rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700
+          transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50
+          dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+        disabled={detectingSpot}
+        onclick={findSpot}
+      >
+        {detectingSpot ? 'Scanning…' : 'Find Signature Spot'}
+      </button>
+      {#if detectSpotError}
+        <p class="text-xs text-amber-600 dark:text-amber-400">{detectSpotError}</p>
+      {/if}
     </div>
 
     {#if canUseLastPosition}
