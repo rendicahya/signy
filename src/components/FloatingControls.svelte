@@ -1,6 +1,8 @@
 <script lang="ts">
   import { editorStore, activeDocument, DEFAULT_RENDER_SCALE } from '../stores/editor';
   import { redactMode } from '../stores/redact';
+  import { textToolMode } from '../stores/textTool';
+  import { clickToPlaceMode } from '../stores/clickToPlace';
   import { getCachedPdf } from '../lib/pdf/docCache';
   import { boxToRatio, placementFromRatioForDocument } from '../lib/pdf/placement';
 
@@ -9,8 +11,19 @@
     $activeDocument ? Array.from({ length: $activeDocument.pageCount }, (_, i) => i + 1) : [],
   );
 
+  // Redact and Add Text are mutually exclusive click-driven modes on the
+  // canvas — enabling one turns the other off so a click has one unambiguous meaning.
   function toggleRedactMode() {
     redactMode.update((v) => !v);
+    if ($redactMode) textToolMode.set(false);
+  }
+
+  function toggleTextToolMode() {
+    textToolMode.update((v) => !v);
+    if ($textToolMode) {
+      redactMode.set(false);
+      clickToPlaceMode.set(false);
+    }
   }
 
   const canApplyRedactionToAll = $derived(
@@ -213,6 +226,28 @@
         <path stroke-linecap="round" d="M8 12h8" />
       </svg>
       Redact
+    </button>
+
+    <button
+      type="button"
+      aria-pressed={$textToolMode}
+      title="Add Text — click on the document to place a text box"
+      class="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
+      class:border-neutral-200={!$textToolMode}
+      class:text-neutral-600={!$textToolMode}
+      class:hover:bg-neutral-100={!$textToolMode}
+      class:dark:border-neutral-800={!$textToolMode}
+      class:dark:text-neutral-300={!$textToolMode}
+      class:dark:hover:bg-neutral-800={!$textToolMode}
+      class:border-blue-600={$textToolMode}
+      class:bg-blue-600={$textToolMode}
+      class:text-white={$textToolMode}
+      onclick={toggleTextToolMode}
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5 6h14M12 6v12" />
+      </svg>
+      Add Text
     </button>
 
     {#if canApplyRedactionToAll}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import UploadCard from './components/UploadCard.svelte';
+  import DocumentThumbnail from './components/DocumentThumbnail.svelte';
   import PDFViewer from './components/PDFViewer.svelte';
   import SignaturePanel from './components/SignaturePanel.svelte';
   import PageSidebar from './components/PageSidebar.svelte';
@@ -266,8 +267,9 @@
             {/if}
             <ul class="flex-1 space-y-1 overflow-y-auto text-sm">
               {#each editor.documents as doc (doc.id)}
-                <li class="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5
+                <li class="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5
                   dark:bg-neutral-800">
+                  <DocumentThumbnail id={doc.id} file={doc.file} />
                   <span class="min-w-0 flex-1 truncate">{doc.file.name}</span>
                   <span class="shrink-0 text-xs text-neutral-400">
                     {doc.pageCount} page{doc.pageCount > 1 ? 's' : ''}

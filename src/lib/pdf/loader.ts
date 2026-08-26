@@ -25,14 +25,26 @@ export function getTotalRotation(page: { rotate: number }, extraRotation = 0): n
   return ((page.rotate + extraRotation) % 360 + 360) % 360;
 }
 
-// Tracks the in-flight render task per canvas so a newer render can cancel a
-// stale one. pdf.js does not do this on its own — two overlapping render()
+// Tracks the in-flight render "claim" per canvas so a newer render can cancel
+// a stale one. pdf.js does not do this on its own — two overlapping render()
 // calls on the same canvas race to set canvas.width/height and draw, which
 // tears the frame (visible as a corrupted/mirrored page) instead of queuing.
-// This can happen whenever something re-triggers PDFViewer's render effect
-// before the previous render finished, e.g. "Apply to All Documents" firing
-// several rapid store updates.
-const pendingRenders = new WeakMap<HTMLCanvasElement, ReturnType<PdfPage['render']>>();
+// This can happen whenever something re-triggers a render effect before the
+// previous render finished — e.g. "Apply to All Documents" firing several
+// rapid store updates, or two `$effect` runs settling in quick succession
+// right after a canvas is first mounted.
+//
+// The claim is staked *before* the first await (doc.getPage is async), not
+// after: two calls that start close enough together can otherwise both find
+// nothing to cancel yet and both proceed to page.render() on the same
+// canvas, which pdf.js rejects outright ("Cannot use the same canvas during
+// multiple render() operations"). Restaking the claim synchronously means
+// the loser reliably notices, on resuming from its own await, that a newer
+// claim has taken over, and bails before ever calling render().
+interface RenderClaim {
+  task?: ReturnType<PdfPage['render']>;
+}
+const pendingRenders = new WeakMap<HTMLCanvasElement, RenderClaim>();
 
 type PdfPage = Awaited<ReturnType<PdfDocument['getPage']>>;
 
@@ -43,9 +55,13 @@ export async function renderPageToCanvas(
   scale = 1.5,
   extraRotation = 0,
 ): Promise<void> {
-  pendingRenders.get(canvas)?.cancel();
+  pendingRenders.get(canvas)?.task?.cancel();
+  const myClaim: RenderClaim = {};
+  pendingRenders.set(canvas, myClaim);
 
   const page = await doc.getPage(pageNumber);
+  if (pendingRenders.get(canvas) !== myClaim) return; // superseded while awaiting
+
   const rotation = getTotalRotation(page, extraRotation);
   const viewport = page.getViewport({ scale, rotation });
   const context = canvas.getContext('2d');
@@ -55,7 +71,7 @@ export async function renderPageToCanvas(
   canvas.height = viewport.height;
 
   const renderTask = page.render({ canvas, canvasContext: context, viewport });
-  pendingRenders.set(canvas, renderTask);
+  myClaim.task = renderTask;
   try {
     await renderTask.promise;
   } catch (e) {
@@ -63,6 +79,6 @@ export async function renderPageToCanvas(
     // render will finish and draw the correct frame.
     if (!(e instanceof Error) || e.name !== 'RenderingCancelledException') throw e;
   } finally {
-    if (pendingRenders.get(canvas) === renderTask) pendingRenders.delete(canvas);
+    if (pendingRenders.get(canvas) === myClaim) pendingRenders.delete(canvas);
   }
 }

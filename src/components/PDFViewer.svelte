@@ -2,9 +2,26 @@
   import { onMount } from 'svelte';
   import { renderPageToCanvas, type PdfDocument } from '../lib/pdf/loader';
   import { getCachedPdf } from '../lib/pdf/docCache';
-  import { editorStore, activeDocument, type PlacedSignature, type RedactionBox } from '../stores/editor';
+  import { editorStore, activeDocument, type PlacedSignature, type PlacedText, type RedactionBox } from '../stores/editor';
   import { redactMode } from '../stores/redact';
   import { clickToPlaceMode } from '../stores/clickToPlace';
+  import {
+    textToolMode,
+    defaultTextFontFamily,
+    defaultTextFontSize,
+    defaultTextBold,
+    defaultTextItalic,
+    defaultTextUnderline,
+    defaultTextColor,
+    defaultTextLetterSpacing,
+    defaultTextAlign,
+    FONT_FAMILY_CSS,
+    FONT_FAMILY_LABELS,
+    TEXT_FONT_SIZE_MIN,
+    TEXT_FONT_SIZE_MAX,
+    TEXT_LETTER_SPACING_MIN,
+    TEXT_LETTER_SPACING_MAX,
+  } from '../stores/textTool';
   import { signatureStore } from '../stores/signature';
   import {
     watermarkText,
@@ -79,6 +96,12 @@
     return doc.redactions.filter((box) => box.page === doc.pageNumber);
   });
 
+  const textsOnCurrentPage = $derived.by(() => {
+    const doc = $activeDocument;
+    if (!doc) return [];
+    return doc.texts.filter((t) => t.page === doc.pageNumber);
+  });
+
   // The move/resize/remove controls only show while a signature is
   // "selected" — right after it's placed, or after the user clicks it again
   // — and hide once the user clicks anywhere else, so signatures don't
@@ -92,6 +115,8 @@
     if (page === lastPageForSelection) return;
     lastPageForSelection = page;
     selectedSignatureId = null;
+    if (editingTextId) commitTextEdit();
+    selectedTextId = null;
   });
 
   function onWindowPointerDown(e: PointerEvent) {
@@ -104,6 +129,19 @@
       ? wrapperEl?.querySelector(`[data-redaction="${selectedRedactionId}"]`)
       : null;
     if (!currentRedaction?.contains(e.target as Node)) selectedRedactionId = null;
+
+    // Deliberately doesn't touch editingTextId/commitTextEdit here: this
+    // handler fires on the same pointerdown that creates a brand-new text
+    // box, and at that point Svelte hasn't painted the box into the DOM yet
+    // — the querySelector below would find nothing and wrongly treat the
+    // just-opened box as "clicked outside," discarding it before the user
+    // can type. The textarea's own onblur is the sole authority for
+    // committing/discarding an edit; it only fires once the element genuinely
+    // existed and had focus, so it doesn't have this race.
+    const currentText = selectedTextId ? wrapperEl?.querySelector(`[data-placed-text="${selectedTextId}"]`) : null;
+    if (!currentText?.contains(e.target as Node) && editingTextId !== selectedTextId) {
+      selectedTextId = null;
+    }
   }
 
   function clamp(value: number, min: number, max: number): number {
@@ -153,7 +191,34 @@
   }
 
   function onCanvasClick(e: PointerEvent) {
-    if (!$clickToPlaceMode || $redactMode) return;
+    if ($redactMode) return;
+
+    if ($textToolMode) {
+      // preventDefault stops the browser's own default action for this
+      // pointerdown — normally "focus whatever's focusable at the target, or
+      // else blur the current focus" — which otherwise runs right after this
+      // handler returns and immediately steals focus back off the textarea
+      // addTextAt is about to create and focus (canvas itself isn't
+      // focusable, so the default action would just blur it).
+      // stopPropagation stops this same pointerdown from also reaching the
+      // window-level listener below: that listener closes the editor for
+      // whatever text box isn't under the click, but Svelte hasn't painted
+      // the just-created textarea into the DOM yet at this point in the same
+      // event, so its "is this click inside the box" check would wrongly see
+      // no box there and immediately close the one just opened.
+      e.preventDefault();
+      e.stopPropagation();
+      // Add Text mode stays on after placing one box (so several can be
+      // added in a row), so a click elsewhere on the canvas to start a new
+      // box arrives here too — commit whatever's currently being edited
+      // first, otherwise reassigning editingTextId to the new box below
+      // would discard the previous one's typed text unsaved.
+      if (editingTextId) commitTextEdit();
+      addTextAt(e);
+      return;
+    }
+
+    if (!$clickToPlaceMode) return;
 
     const doc = $activeDocument;
     if (!doc) return;
@@ -447,6 +512,186 @@
     const y = clamp(box.y + dy, 0, rect.height - box.height);
     editorStore.updateRedaction(id, { x, y });
   }
+
+  // Text tool: click to drop a text box (in textToolMode), then type directly
+  // into it. Move/resize mirror the redaction box (a plain rectangle, no
+  // aspect-ratio lock) rather than the signature.
+  const TEXT_DEFAULT_WIDTH = 220;
+  const TEXT_MIN_WIDTH = 40;
+  const TEXT_MIN_HEIGHT = 20;
+
+  let selectedTextId: string | null = $state(null);
+  let editingTextId: string | null = $state(null);
+  let textEditValue = $state('');
+
+  function autofocusTextarea(node: HTMLTextAreaElement) {
+    node.focus();
+    node.select();
+  }
+
+  function startEditingText(id: string, initialValue: string) {
+    editingTextId = id;
+    textEditValue = initialValue;
+  }
+
+  // `forId`, when given, is the id the caller believes it's committing (e.g.
+  // a textarea's own onblur). When Svelte unmounts a text box that just
+  // stopped being edited (its {#if isEditing} branch switching off), removing
+  // that DOM node from the document fires a genuine native 'blur' on it —
+  // but by then editingTextId may have already moved on to a *different* box
+  // the user clicked to create next. Without this guard, that stale blur
+  // would call commitTextEdit() and it'd blindly act on whatever
+  // editingTextId is *now*, wiping out the new box instead of the old one.
+  function commitTextEdit(forId?: string) {
+    if (forId !== undefined && forId !== editingTextId) return;
+    if (!editingTextId) return;
+    const id = editingTextId;
+    const value = textEditValue;
+    editingTextId = null;
+    // An empty box left after editing is just clutter — drop it rather than
+    // leaving an invisible placeholder on the page.
+    if (!value.trim()) editorStore.removeText(id);
+    else editorStore.updateText(id, { text: value });
+  }
+
+  function addTextAt(e: PointerEvent) {
+    const doc = $activeDocument;
+    if (!doc) return;
+
+    const rect = canvasEl.getBoundingClientRect();
+    const width = Math.min(TEXT_DEFAULT_WIDTH, rect.width);
+    const height = $defaultTextFontSize * 1.6;
+    const x = clamp(e.clientX - rect.left - width / 2, 0, rect.width - width);
+    const y = clamp(e.clientY - rect.top - height / 2, 0, rect.height - height);
+
+    const id = editorStore.addText({
+      x,
+      y,
+      width,
+      height,
+      page: doc.pageNumber,
+      text: '',
+      fontFamily: $defaultTextFontFamily,
+      fontSize: $defaultTextFontSize,
+      bold: $defaultTextBold,
+      italic: $defaultTextItalic,
+      underline: $defaultTextUnderline,
+      color: $defaultTextColor,
+      letterSpacing: $defaultTextLetterSpacing,
+      align: $defaultTextAlign,
+    });
+    selectedTextId = id;
+    startEditingText(id, '');
+  }
+
+  function onTextDoubleClick(e: MouseEvent, t: PlacedText) {
+    e.stopPropagation();
+    selectedTextId = t.id;
+    startEditingText(t.id, t.text);
+  }
+
+  let movingTextId: string | null = null;
+  let textMoveOffset = { x: 0, y: 0 };
+
+  function onTextPointerDown(e: PointerEvent, id: string) {
+    if (editingTextId === id) return;
+    e.stopPropagation();
+    selectedTextId = id;
+    movingTextId = id;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const boxRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    textMoveOffset = { x: e.clientX - boxRect.left, y: e.clientY - boxRect.top };
+  }
+
+  function onTextPointerMove(e: PointerEvent, id: string) {
+    if (movingTextId !== id) return;
+    const t = $activeDocument?.texts.find((x) => x.id === id);
+    if (!t) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const x = clamp(e.clientX - rect.left - textMoveOffset.x, 0, rect.width - t.width);
+    const y = clamp(e.clientY - rect.top - textMoveOffset.y, 0, rect.height - t.height);
+    editorStore.updateText(id, { x, y });
+  }
+
+  function onTextPointerUp() {
+    movingTextId = null;
+  }
+
+  function onTextKeydown(e: KeyboardEvent, id: string) {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      editorStore.removeText(id);
+      if (selectedTextId === id) selectedTextId = null;
+      return;
+    }
+
+    if (!['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(e.key)) return;
+    e.preventDefault();
+
+    const t = $activeDocument?.texts.find((x) => x.id === id);
+    if (!t) return;
+
+    const rect = canvasEl.getBoundingClientRect();
+    const dx = e.key === 'ArrowLeft' ? -KEYBOARD_MOVE_STEP : e.key === 'ArrowRight' ? KEYBOARD_MOVE_STEP : 0;
+    const dy = e.key === 'ArrowUp' ? -KEYBOARD_MOVE_STEP : e.key === 'ArrowDown' ? KEYBOARD_MOVE_STEP : 0;
+    const x = clamp(t.x + dx, 0, rect.width - t.width);
+    const y = clamp(t.y + dy, 0, rect.height - t.height);
+    editorStore.updateText(id, { x, y });
+  }
+
+  let resizingTextId: string | null = null;
+  let textResizeStart: (PlacedText & { pointerX: number; pointerY: number }) | null = null;
+
+  function onTextResizePointerDown(e: PointerEvent, id: string) {
+    e.stopPropagation();
+    const t = $activeDocument?.texts.find((x) => x.id === id);
+    if (!t) return;
+    resizingTextId = id;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    textResizeStart = { pointerX: e.clientX, pointerY: e.clientY, ...t };
+  }
+
+  function onTextResizePointerMove(e: PointerEvent, id: string) {
+    if (resizingTextId !== id || !textResizeStart) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const width = clamp(
+      textResizeStart.width + (e.clientX - textResizeStart.pointerX),
+      TEXT_MIN_WIDTH,
+      rect.width - textResizeStart.x,
+    );
+    const height = clamp(
+      textResizeStart.height + (e.clientY - textResizeStart.pointerY),
+      TEXT_MIN_HEIGHT,
+      rect.height - textResizeStart.y,
+    );
+    editorStore.updateText(id, { width, height });
+  }
+
+  function onTextResizePointerUp(e: PointerEvent) {
+    resizingTextId = null;
+    textResizeStart = null;
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+  }
+
+  function removeText(e: MouseEvent, id: string) {
+    e.stopPropagation();
+    editorStore.removeText(id);
+    if (selectedTextId === id) selectedTextId = null;
+  }
+
+  // Style toolbar edits apply to the selected box and become the default for
+  // the next text box placed, mirroring how the watermark panel's settings persist.
+  function setTextStyle(id: string, partial: Partial<PlacedText>) {
+    editorStore.updateText(id, partial);
+    if ('fontFamily' in partial) defaultTextFontFamily.set(partial.fontFamily!);
+    if ('fontSize' in partial) defaultTextFontSize.set(partial.fontSize!);
+    if ('bold' in partial) defaultTextBold.set(partial.bold!);
+    if ('italic' in partial) defaultTextItalic.set(partial.italic!);
+    if ('underline' in partial) defaultTextUnderline.set(partial.underline!);
+    if ('color' in partial) defaultTextColor.set(partial.color!);
+    if ('letterSpacing' in partial) defaultTextLetterSpacing.set(partial.letterSpacing!);
+    if ('align' in partial) defaultTextAlign.set(partial.align!);
+  }
 </script>
 
 <svelte:window onpointerdown={onWindowPointerDown} />
@@ -469,6 +714,7 @@
     bind:this={canvasEl}
     class="rounded-lg shadow-lg"
     class:cursor-crosshair={$redactMode}
+    class:cursor-text={$textToolMode && !$redactMode}
     onpointerdown={onCanvasClick}
     onpointermove={onCanvasMouseMove}
   ></canvas>
@@ -623,6 +869,207 @@
             <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18" />
           </svg>
         </button>
+      {/if}
+    </div>
+  {/each}
+
+  {#each textsOnCurrentPage as t (t.id)}
+    {@const isSelected = selectedTextId === t.id}
+    {@const isEditing = editingTextId === t.id}
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      data-placed-text={t.id}
+      role="group"
+      tabindex="0"
+      aria-label="Text box — double-click to edit, drag to move, drag the corner handle to resize"
+      class="absolute touch-none {isEditing ? '' : 'cursor-move'} {isSelected
+        ? 'ring-2 ring-blue-400/70'
+        : 'hover:ring-1 hover:ring-blue-300/50'}"
+      style:left="{t.x}px"
+      style:top="{t.y}px"
+      style:width="{t.width}px"
+      style:height="{t.height}px"
+      onpointerdown={(e) => onTextPointerDown(e, t.id)}
+      onpointermove={(e) => onTextPointerMove(e, t.id)}
+      onpointerup={onTextPointerUp}
+      ondblclick={(e) => onTextDoubleClick(e, t)}
+      onfocus={() => (selectedTextId = t.id)}
+      onkeydown={(e) => onTextKeydown(e, t.id)}
+    >
+      {#if isEditing}
+        <!-- svelte-ignore a11y_autofocus -->
+        <textarea
+          use:autofocusTextarea
+          bind:value={textEditValue}
+          onpointerdown={(e) => e.stopPropagation()}
+          onblur={() => commitTextEdit(t.id)}
+          class="h-full w-full resize-none border border-dashed border-blue-400 bg-white/70 p-0
+            outline-none dark:bg-neutral-900/70"
+          style:font-family={FONT_FAMILY_CSS[t.fontFamily]}
+          style:font-size="{t.fontSize}px"
+          style:font-weight={t.bold ? 700 : 400}
+          style:font-style={t.italic ? 'italic' : 'normal'}
+          style:text-decoration={t.underline ? 'underline' : 'none'}
+          style:color={t.color}
+          style:letter-spacing="{t.letterSpacing}px"
+          style:line-height="1.2"
+          style:text-align={t.align}
+        ></textarea>
+      {:else}
+        <div
+          class="h-full w-full select-none overflow-hidden whitespace-pre-wrap break-words"
+          style:font-family={FONT_FAMILY_CSS[t.fontFamily]}
+          style:font-size="{t.fontSize}px"
+          style:font-weight={t.bold ? 700 : 400}
+          style:font-style={t.italic ? 'italic' : 'normal'}
+          style:text-decoration={t.underline ? 'underline' : 'none'}
+          style:color={t.color}
+          style:letter-spacing="{t.letterSpacing}px"
+          style:line-height="1.2"
+          style:text-align={t.align}
+        >
+          {t.text}
+        </div>
+      {/if}
+
+      {#if isSelected}
+        <div
+          role="button"
+          tabindex="0"
+          aria-label="Resize text box"
+          title="Resize (drag the handle)"
+          class="absolute -bottom-1.5 -right-1.5 h-3.5 w-3.5 cursor-se-resize touch-none rounded-full
+            border border-white bg-blue-500 shadow focus:outline-none focus:ring-2 focus:ring-blue-400"
+          onpointerdown={(e) => onTextResizePointerDown(e, t.id)}
+          onpointermove={(e) => onTextResizePointerMove(e, t.id)}
+          onpointerup={onTextResizePointerUp}
+        ></div>
+
+        <button
+          type="button"
+          aria-label="Remove text box"
+          title="Remove text box"
+          class="absolute -right-1.5 -top-1.5 flex h-5 w-5 touch-none items-center justify-center rounded-full
+            border border-white bg-red-500 text-white shadow transition-colors hover:bg-red-600"
+          onpointerdown={(e) => e.stopPropagation()}
+          onclick={(e) => removeText(e, t.id)}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="h-3 w-3">
+            <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="absolute z-10 flex items-center gap-1 whitespace-nowrap rounded-full border border-neutral-200
+            bg-white px-2 py-1 text-xs shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+          style:left="0px"
+          style:top={t.y < 48 ? `${t.height + 8}px` : '-40px'}
+          onpointerdown={(e) => e.stopPropagation()}
+        >
+          <select
+            aria-label="Font family"
+            class="rounded border-none bg-transparent py-0.5 pr-4 text-xs focus:outline-none focus:ring-1
+              focus:ring-blue-400 dark:text-neutral-100"
+            value={t.fontFamily}
+            onchange={(e) => setTextStyle(t.id, { fontFamily: (e.target as HTMLSelectElement).value as PlacedText['fontFamily'] })}
+          >
+            {#each Object.entries(FONT_FAMILY_LABELS) as [value, label]}
+              <option {value}>{label}</option>
+            {/each}
+          </select>
+
+          <input
+            type="number"
+            aria-label="Font size"
+            title="Font size"
+            min={TEXT_FONT_SIZE_MIN}
+            max={TEXT_FONT_SIZE_MAX}
+            class="w-10 rounded border border-neutral-200 bg-transparent px-1 py-0.5 text-xs focus:outline-none
+              focus:ring-1 focus:ring-blue-400 dark:border-neutral-700 dark:text-neutral-100"
+            value={Math.round(t.fontSize)}
+            onchange={(e) =>
+              setTextStyle(t.id, {
+                fontSize: clamp(Number((e.target as HTMLInputElement).value), TEXT_FONT_SIZE_MIN, TEXT_FONT_SIZE_MAX),
+              })}
+          />
+
+          <button
+            type="button"
+            aria-pressed={t.bold}
+            title="Bold"
+            class="flex h-6 w-6 items-center justify-center rounded font-bold {t.bold
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400'
+              : 'text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800'}"
+            onclick={() => setTextStyle(t.id, { bold: !t.bold })}
+          >
+            B
+          </button>
+          <button
+            type="button"
+            aria-pressed={t.italic}
+            title="Italic"
+            class="flex h-6 w-6 items-center justify-center rounded italic {t.italic
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400'
+              : 'text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800'}"
+            onclick={() => setTextStyle(t.id, { italic: !t.italic })}
+          >
+            I
+          </button>
+          <button
+            type="button"
+            aria-pressed={t.underline}
+            title="Underline"
+            class="flex h-6 w-6 items-center justify-center rounded underline {t.underline
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400'
+              : 'text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800'}"
+            onclick={() => setTextStyle(t.id, { underline: !t.underline })}
+          >
+            U
+          </button>
+
+          <div class="flex items-center gap-0.5 border-l border-neutral-200 pl-1 dark:border-neutral-700">
+            {#each [{ value: 'left', d: 'M4 6h16M4 12h10M4 18h14' }, { value: 'center', d: 'M4 6h16M7 12h10M5 18h14' }, { value: 'right', d: 'M4 6h16M10 12h10M6 18h14' }] as opt}
+              <button
+                type="button"
+                aria-pressed={t.align === opt.value}
+                title="Align {opt.value}"
+                class="flex h-6 w-6 items-center justify-center rounded {t.align === opt.value
+                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400'
+                  : 'text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800'}"
+                onclick={() => setTextStyle(t.id, { align: opt.value as PlacedText['align'] })}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
+                  <path stroke-linecap="round" d={opt.d} />
+                </svg>
+              </button>
+            {/each}
+          </div>
+
+          <input
+            type="color"
+            aria-label="Text color"
+            title="Text color"
+            value={t.color}
+            onchange={(e) => setTextStyle(t.id, { color: (e.target as HTMLInputElement).value })}
+            class="h-6 w-6 cursor-pointer rounded border border-neutral-300 bg-transparent p-0
+              dark:border-neutral-600"
+          />
+
+          <label class="flex items-center gap-1 text-neutral-500 dark:text-neutral-400" title="Letter spacing">
+            <span class="text-[10px]">A↔B</span>
+            <input
+              type="range"
+              min={TEXT_LETTER_SPACING_MIN}
+              max={TEXT_LETTER_SPACING_MAX}
+              step="0.5"
+              value={t.letterSpacing}
+              oninput={(e) => setTextStyle(t.id, { letterSpacing: Number((e.target as HTMLInputElement).value) })}
+              class="w-16 accent-blue-600"
+            />
+          </label>
+        </div>
       {/if}
     </div>
   {/each}

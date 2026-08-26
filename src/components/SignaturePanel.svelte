@@ -3,6 +3,7 @@
   import { editorStore, activeDocument } from '../stores/editor';
   import { lastPlacement } from '../stores/placement';
   import { clickToPlaceMode } from '../stores/clickToPlace';
+  import { textToolMode } from '../stores/textTool';
   import {
     watermarkText,
     includeTimestamp,
@@ -181,7 +182,14 @@
       </button>
 
       <label class="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-        <input type="checkbox" bind:checked={$clickToPlaceMode} class="rounded" />
+        <input
+          type="checkbox"
+          bind:checked={$clickToPlaceMode}
+          onchange={() => {
+            if ($clickToPlaceMode) textToolMode.set(false);
+          }}
+          class="rounded"
+        />
         Click-to-place mode
       </label>
     </div>

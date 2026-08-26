@@ -5,7 +5,8 @@ import { placementFromRatioForDocument } from './placement';
 import { stripEmbeddedScripts } from './sanitize';
 import { applyRedactions } from './redact';
 import { applyVisibleWatermark, type WatermarkOptions } from '../watermark/visible';
-import type { PdfDocumentState, PlacedSignature, RedactionBox } from '../../stores/editor';
+import { drawTextBox, embedTextFont, hexToRgb } from './textRender';
+import type { PdfDocumentState, PlacedSignature, PlacedText, RedactionBox } from '../../stores/editor';
 import type { PlacementRatio } from '../../stores/placement';
 
 export interface ExportParams {
@@ -22,6 +23,8 @@ export interface ExportParams {
   stripScripts?: boolean;
   /** Areas to permanently strip from the exported PDF before the signature is drawn. */
   redactions?: RedactionBox[];
+  /** Typed text boxes to draw onto the exported PDF. */
+  texts?: PlacedText[];
 }
 
 function blobToBytes(blob: Blob): Promise<Uint8Array> {
@@ -45,6 +48,7 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
     watermark,
     stripScripts = false,
     redactions = [],
+    texts = [],
   } = params;
 
   const pdfBytes = await blobToBytes(pdfFile);
@@ -81,6 +85,52 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
 
       const targetPage = pdfDoc.getPage(placement.page - 1); // pdf-lib pages are 0-indexed
       targetPage.drawImage(pngImage, { x, y, width, height });
+    }
+  }
+
+  if (texts.length > 0) {
+    // One embedded font per (family, bold, italic) combination, reused across
+    // every text box that shares it rather than re-embedding per box.
+    const fontCache = new Map<string, Awaited<ReturnType<typeof embedTextFont>>>();
+
+    for (const t of texts) {
+      if (!t.text.trim()) continue;
+
+      const fontKey = `${t.fontFamily}-${t.bold}-${t.italic}`;
+      let font = fontCache.get(fontKey);
+      if (!font) {
+        font = await embedTextFont(pdfDoc, t.fontFamily, t.bold, t.italic);
+        fontCache.set(fontKey, font);
+      }
+
+      const pdfjsPage = await pdfjsDoc.getPage(t.page);
+      const totalRotation = getTotalRotation(pdfjsPage, rotation);
+      const viewport = pdfjsPage.getViewport({ scale: renderScale, rotation: totalRotation });
+
+      const [x1, y1] = viewport.convertToPdfPoint(t.x, t.y);
+      const [x2, y2] = viewport.convertToPdfPoint(t.x + t.width, t.y + t.height);
+
+      const x = Math.min(x1, x2);
+      const topY = Math.max(y1, y2);
+      const boxWidth = Math.abs(x2 - x1);
+      // Canvas-px-to-PDF-point scale factor for this page/rotation, derived
+      // from the box itself rather than a fixed constant so it stays correct
+      // across zoom levels and rotations.
+      const pxToPt = t.width > 0 ? boxWidth / t.width : renderScale;
+
+      const targetPage = pdfDoc.getPage(t.page - 1);
+      drawTextBox(targetPage, {
+        text: t.text,
+        x,
+        topY,
+        width: boxWidth,
+        font,
+        fontSize: t.fontSize * pxToPt,
+        color: hexToRgb(t.color),
+        letterSpacing: t.letterSpacing * pxToPt,
+        underline: t.underline,
+        align: t.align,
+      });
     }
   }
 
@@ -207,7 +257,7 @@ export async function exportAllAsZip(
 
   for (const doc of documents) {
     const placements = signatureBlob ? await resolvePlacements(doc, renderScale, lastPlacementRatio) : [];
-    if (placements.length === 0 && doc.redactions.length === 0) {
+    if (placements.length === 0 && doc.redactions.length === 0 && doc.texts.length === 0) {
       skipped.push(doc.file.name);
       continue;
     }
@@ -221,6 +271,7 @@ export async function exportAllAsZip(
       watermark,
       stripScripts,
       redactions: doc.redactions,
+      texts: doc.texts,
     });
 
     let name = signedFileName(doc.file.name);

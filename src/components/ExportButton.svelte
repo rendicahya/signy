@@ -42,8 +42,8 @@
     const sig = $signatureStore;
     const placements = sig.signature ? await resolvePlacements(doc, $editorStore.renderScale, $lastPlacement) : [];
 
-    if (placements.length === 0 && doc.redactions.length === 0) {
-      throw new Error('Nothing to export yet — place a signature or draw a redaction first.');
+    if (placements.length === 0 && doc.redactions.length === 0 && doc.texts.length === 0) {
+      throw new Error('Nothing to export yet — place a signature, draw a redaction, or add text first.');
     }
 
     return {
@@ -70,6 +70,7 @@
         watermark: currentWatermark(),
         stripScripts: $stripEmbeddedScripts,
         redactions: doc.redactions,
+        texts: doc.texts,
       });
       downloadSignedPdf(bytes, doc.file.name);
       editorStore.markDocumentExported(doc.id);
@@ -98,6 +99,7 @@
         watermark: currentWatermark(),
         stripScripts: $stripEmbeddedScripts,
         redactions: doc.redactions,
+        texts: doc.texts,
       });
       printPdfBytes(bytes);
       editorStore.markDocumentExported(doc.id);

@@ -24,6 +24,33 @@ export interface RedactionBox {
   page: number;
 }
 
+export type TextFontFamily = 'helvetica' | 'times' | 'courier' | 'arial' | 'consolas';
+
+export type TextAlign = 'left' | 'center' | 'right';
+
+/** A typed text box placed on the page, in canvas pixel coordinates. */
+export interface PlacedText {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** 1-indexed page this text belongs to. */
+  page: number;
+  text: string;
+  fontFamily: TextFontFamily;
+  /** In canvas pixels at the current render scale — rescaled alongside x/y/width/height on zoom. */
+  fontSize: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  /** CSS hex color. */
+  color: string;
+  /** In canvas pixels at the current render scale. */
+  letterSpacing: number;
+  align: TextAlign;
+}
+
 /** Per-document editing state — one entry per uploaded PDF. */
 export interface PdfDocumentState {
   id: string;
@@ -32,6 +59,7 @@ export interface PdfDocumentState {
   pageCount: number;
   placedSignatures: PlacedSignature[];
   redactions: RedactionBox[];
+  texts: PlacedText[];
   /** Additional rotation (0/90/180/270) the user applied on top of the page's own rotation. */
   rotation: number;
   /** Whether the current placement/redactions have been saved/printed — cleared whenever either changes. Used to warn before closing an unsaved tab. */
@@ -64,6 +92,7 @@ function createDocumentState(file: File): PdfDocumentState {
     pageCount: 1,
     placedSignatures: [],
     redactions: [],
+    texts: [],
     rotation: 0,
     exported: false,
   };
@@ -106,6 +135,15 @@ function rescale(state: EditorState, nextScale: number): EditorState {
       y: box.y * factor,
       width: box.width * factor,
       height: box.height * factor,
+    })),
+    texts: doc.texts.map((t) => ({
+      ...t,
+      x: t.x * factor,
+      y: t.y * factor,
+      width: t.width * factor,
+      height: t.height * factor,
+      fontSize: t.fontSize * factor,
+      letterSpacing: t.letterSpacing * factor,
     })),
   }));
   return { ...state, renderScale, documents };
@@ -363,6 +401,54 @@ function createEditorStore() {
     }));
   }
 
+  function addText(text: Omit<PlacedText, 'id'>): string {
+    const id = crypto.randomUUID();
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        texts: [...doc.texts, { ...text, id }],
+        exported: false,
+      })),
+    );
+    return id;
+  }
+
+  function updateText(id: string, partial: Partial<PlacedText>) {
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        texts: doc.texts.map((t) => (t.id === id ? { ...t, ...partial } : t)),
+        exported: false,
+      })),
+    );
+  }
+
+  function removeText(id: string) {
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        texts: doc.texts.filter((t) => t.id !== id),
+        exported: false,
+      })),
+    );
+  }
+
+  /** Replaces an arbitrary document's entire text set (not just the active one) — mirrors setSignaturesForDocument/setRedactionsForDocument for "Apply to All". */
+  function setTextsForDocument(id: string, items: Omit<PlacedText, 'id'>[]) {
+    update((state) => ({
+      ...state,
+      documents: state.documents.map((doc) =>
+        doc.id === id
+          ? {
+              ...doc,
+              texts: items.map((item) => ({ ...item, id: crypto.randomUUID() })),
+              exported: false,
+            }
+          : doc,
+      ),
+    }));
+  }
+
   /** Marks a specific document as saved/printed in its current placement — clears the "signed but not downloaded" warning for that tab. */
   function markDocumentExported(id: string) {
     update((state) => ({
@@ -393,11 +479,11 @@ function createEditorStore() {
     const doc = getActiveDocument(state);
     if (!doc) return;
 
-    const { id, file, rotation: oldRotation, placedSignatures, redactions } = doc;
+    const { id, file, rotation: oldRotation, placedSignatures, redactions, texts } = doc;
     const { renderScale } = state;
     const newRotation = (((oldRotation + delta) % 360) + 360) % 360;
 
-    const applyRotation = (placements: PlacedSignature[], boxes: RedactionBox[]) => {
+    const applyRotation = (placements: PlacedSignature[], boxes: RedactionBox[], newTexts: PlacedText[]) => {
       update((state) => ({
         ...state,
         // Target this specific document rather than "whichever is active
@@ -405,7 +491,14 @@ function createEditorStore() {
         // switched tabs before it resolves.
         documents: state.documents.map((d) =>
           d.id === id
-            ? { ...d, rotation: newRotation, placedSignatures: placements, redactions: boxes, exported: false }
+            ? {
+                ...d,
+                rotation: newRotation,
+                placedSignatures: placements,
+                redactions: boxes,
+                texts: newTexts,
+                exported: false,
+              }
             : d,
         ),
       }));
@@ -421,11 +514,14 @@ function createEditorStore() {
       const newRedactions = await Promise.all(
         redactions.map((box) => rotateGeometry(pdfjsDoc, box.page, renderScale, oldRotation, newRotation, box)),
       );
-      applyRotation(newPlacements, newRedactions);
+      const newTexts = await Promise.all(
+        texts.map((t) => rotateGeometry(pdfjsDoc, t.page, renderScale, oldRotation, newRotation, t)),
+      );
+      applyRotation(newPlacements, newRedactions, newTexts);
     } catch {
       // Couldn't re-derive the geometry (e.g. the PDF failed to load) — fall
       // back to clearing rather than leaving stale, now-misaligned positions.
-      applyRotation([], []);
+      applyRotation([], [], []);
     }
   }
 
@@ -466,6 +562,10 @@ function createEditorStore() {
     updateRedaction,
     removeRedaction,
     setRedactionsForDocument,
+    addText,
+    updateText,
+    removeText,
+    setTextsForDocument,
     markDocumentExported,
     setRenderScale,
     zoomIn,
