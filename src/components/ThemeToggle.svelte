@@ -6,14 +6,14 @@
   type="button"
   aria-label="Toggle dark mode"
   title={$theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-  class="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 transition-colors
+  class="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-500 transition-colors
     hover:bg-neutral-100 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800
     dark:hover:text-neutral-100"
   onclick={toggleTheme}
 >
   {#if $theme === 'dark'}
     <!-- Sun icon: shown when dark is active, click to go light -->
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4.5 w-4.5">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
       <circle cx="12" cy="12" r="4" />
       <path
         stroke-linecap="round"
@@ -22,7 +22,7 @@
     </svg>
   {:else}
     <!-- Moon icon: shown when light is active, click to go dark -->
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4.5 w-4.5">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
       <path
         stroke-linecap="round"
         stroke-linejoin="round"

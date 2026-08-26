@@ -115,6 +115,7 @@
     if (page === lastPageForSelection) return;
     lastPageForSelection = page;
     selectedSignatureId = null;
+    selectedRedactionId = null;
     if (editingTextId) commitTextEdit();
     selectedTextId = null;
   });
@@ -385,38 +386,82 @@
     if (!$redactMode) drawingBox = null;
   });
 
+  // Move mode (the default — see FloatingControls' "Move" button): a plain
+  // pointer drag directly on the canvas background (not on an overlay, and
+  // not one of the other click-driven modes) pans the scrollable viewport
+  // instead, like the hand tool in Figma/Photoshop. The scroll container
+  // lives in App.svelte, outside this component, so it's found via the
+  // nearest ancestor carrying data-pdf-scroll-container rather than prop-drilled.
+  let isPanning = false;
+  let panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
+  let panScrollContainer: HTMLElement | null = null;
+
+  function canPanFrom(e: PointerEvent): boolean {
+    return !$redactMode && !$textToolMode && !$clickToPlaceMode && e.target === canvasEl;
+  }
+
   function onWrapperPointerDown(e: PointerEvent) {
-    if (!$redactMode || e.target !== canvasEl) return;
-    const rect = canvasEl.getBoundingClientRect();
-    const x = clamp(e.clientX - rect.left, 0, rect.width);
-    const y = clamp(e.clientY - rect.top, 0, rect.height);
-    drawStart = { x, y };
-    drawingBox = { x, y, width: 0, height: 0 };
-    selectedRedactionId = null;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    if ($redactMode && e.target === canvasEl) {
+      const rect = canvasEl.getBoundingClientRect();
+      const x = clamp(e.clientX - rect.left, 0, rect.width);
+      const y = clamp(e.clientY - rect.top, 0, rect.height);
+      drawStart = { x, y };
+      drawingBox = { x, y, width: 0, height: 0 };
+      selectedRedactionId = null;
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      return;
+    }
+
+    if (canPanFrom(e)) {
+      panScrollContainer = wrapperEl?.closest('[data-pdf-scroll-container]') as HTMLElement | null;
+      if (!panScrollContainer) return;
+      isPanning = true;
+      panStart = {
+        x: e.clientX,
+        y: e.clientY,
+        scrollLeft: panScrollContainer.scrollLeft,
+        scrollTop: panScrollContainer.scrollTop,
+      };
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    }
   }
 
   function onWrapperPointerMove(e: PointerEvent) {
-    if (!drawingBox) return;
-    const rect = canvasEl.getBoundingClientRect();
-    const x = clamp(e.clientX - rect.left, 0, rect.width);
-    const y = clamp(e.clientY - rect.top, 0, rect.height);
-    drawingBox = {
-      x: Math.min(x, drawStart.x),
-      y: Math.min(y, drawStart.y),
-      width: Math.abs(x - drawStart.x),
-      height: Math.abs(y - drawStart.y),
-    };
+    if (drawingBox) {
+      const rect = canvasEl.getBoundingClientRect();
+      const x = clamp(e.clientX - rect.left, 0, rect.width);
+      const y = clamp(e.clientY - rect.top, 0, rect.height);
+      drawingBox = {
+        x: Math.min(x, drawStart.x),
+        y: Math.min(y, drawStart.y),
+        width: Math.abs(x - drawStart.x),
+        height: Math.abs(y - drawStart.y),
+      };
+      return;
+    }
+
+    if (isPanning && panScrollContainer) {
+      panScrollContainer.scrollLeft = panStart.scrollLeft - (e.clientX - panStart.x);
+      panScrollContainer.scrollTop = panStart.scrollTop - (e.clientY - panStart.y);
+    }
   }
 
   function onWrapperPointerUp(e: PointerEvent) {
-    if (!drawingBox) return;
-    const doc = $activeDocument;
-    const box = drawingBox;
-    drawingBox = null;
-    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    if (!doc || box.width < REDACT_DRAW_MIN_SIZE || box.height < REDACT_DRAW_MIN_SIZE) return;
-    editorStore.addRedaction({ ...box, page: doc.pageNumber });
+    if (drawingBox) {
+      const doc = $activeDocument;
+      const box = drawingBox;
+      drawingBox = null;
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      if (!doc || box.width < REDACT_DRAW_MIN_SIZE || box.height < REDACT_DRAW_MIN_SIZE) return;
+      editorStore.addRedaction({ ...box, page: doc.pageNumber });
+      return;
+    }
+
+    if (isPanning) {
+      isPanning = false;
+      panScrollContainer = null;
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    }
   }
 
   // Move an existing box. Looks the box up fresh by id on every step (rather
@@ -715,9 +760,10 @@
 >
   <canvas
     bind:this={canvasEl}
-    class="rounded-lg shadow-lg"
+    class="rounded-lg shadow-lg active:cursor-grabbing"
     class:cursor-crosshair={$redactMode}
     class:cursor-text={$textToolMode && !$redactMode}
+    class:cursor-grab={!$redactMode && !$textToolMode && !$clickToPlaceMode}
     onpointerdown={onCanvasClick}
     onpointermove={onCanvasMouseMove}
   ></canvas>

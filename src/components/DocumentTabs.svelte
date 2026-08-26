@@ -53,7 +53,7 @@
 <div
   role="tablist"
   aria-label="Open documents"
-  class="flex min-w-0 flex-1 items-end gap-0.5 self-stretch overflow-x-auto"
+  class="flex min-w-0 items-end gap-0.5 self-stretch"
 >
   {#each $editorStore.documents as doc (doc.id)}
     {@const isActive = doc.id === $activeDocument?.id}

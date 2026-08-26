@@ -7,7 +7,6 @@
   import FloatingControls from './components/FloatingControls.svelte';
   import Toolbar from './components/Toolbar.svelte';
   import ExportButton from './components/ExportButton.svelte';
-  import StartOverButton from './components/StartOverButton.svelte';
   import ThemeToggle from './components/ThemeToggle.svelte';
   import UpdateToast from './components/UpdateToast.svelte';
   import { editorStore, activeDocument } from './stores/editor';
@@ -346,7 +345,7 @@
         </svg>
       </button>
       <div class="relative flex flex-1 flex-col overflow-hidden">
-        <div class="flex-1 overflow-y-auto px-6 py-8">
+        <div class="flex-1 overflow-auto px-6 py-8" data-pdf-scroll-container>
           {#key active.id}
             <PDFViewer />
           {/key}
@@ -359,7 +358,6 @@
           <SignaturePanel />
         </div>
         <div class="flex flex-col gap-2 border-t border-neutral-200 p-4 dark:border-neutral-800">
-          <StartOverButton />
           <ExportButton />
         </div>
       </aside>

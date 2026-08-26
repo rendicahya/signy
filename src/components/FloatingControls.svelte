@@ -26,6 +26,20 @@
     }
   }
 
+  // Move is the default, non-click-driven mode: no other tool is active, the
+  // canvas shows a hand/grab cursor, and dragging existing signatures/text/
+  // redaction boxes around works as normal. It has no state of its own — it's
+  // just "none of the other modes" — but gets its own button so the user has
+  // an explicit, one-click way back to it (same effect as Escape, without
+  // needing to know that shortcut).
+  const moveModeActive = $derived(!$redactMode && !$textToolMode && !$clickToPlaceMode);
+
+  function activateMoveMode() {
+    redactMode.set(false);
+    textToolMode.set(false);
+    clickToPlaceMode.set(false);
+  }
+
   const canApplyRedactionToAll = $derived(
     $editorStore.documents.length > 1 && ($activeDocument?.redactions.length ?? 0) > 0,
   );
@@ -204,6 +218,35 @@
     </div>
 
     <div class="h-5 w-px shrink-0 bg-neutral-200 dark:bg-neutral-800"></div>
+
+    <button
+      type="button"
+      aria-pressed={moveModeActive}
+      title="Move — drag existing signatures, text, or redactions around (default)"
+      class="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
+      class:border-neutral-200={!moveModeActive}
+      class:text-neutral-600={!moveModeActive}
+      class:hover:bg-neutral-100={!moveModeActive}
+      class:dark:border-neutral-800={!moveModeActive}
+      class:dark:text-neutral-300={!moveModeActive}
+      class:dark:hover:bg-neutral-800={!moveModeActive}
+      class:border-neutral-900={moveModeActive}
+      class:bg-neutral-900={moveModeActive}
+      class:text-white={moveModeActive}
+      class:dark:border-neutral-100={moveModeActive}
+      class:dark:bg-neutral-100={moveModeActive}
+      class:dark:text-neutral-900={moveModeActive}
+      onclick={activateMoveMode}
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M9 11.5V6a1.5 1.5 0 0 1 3 0v5M12 11.5V5a1.5 1.5 0 0 1 3 0v6.5M15 11.5V7a1.5 1.5 0 0 1 3 0v7c0 3.31-2.69 6-6 6h-1c-2 0-3-.5-4-2l-2.7-3.6a1.4 1.4 0 0 1 .3-1.9 1.4 1.4 0 0 1 1.8.1L9 15"
+        />
+      </svg>
+      Move
+    </button>
 
     <button
       type="button"
