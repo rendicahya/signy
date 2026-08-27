@@ -29,8 +29,13 @@
   let exportingAll = $state(false);
   let printing = $state(false);
   let showMergeDialog = $state(false);
+  let showSaveMenu = $state(false);
   let merging = $state(false);
   let error: string | null = $state(null);
+
+  const hasMoreSaveOptions = $derived(
+    ($activeDocument?.pageCount ?? 1) > 1 || $editorStore.documents.length > 1,
+  );
 
   function currentWatermark() {
     return {
@@ -193,6 +198,7 @@
 
   function onOpenMergeDialog() {
     error = null;
+    showSaveMenu = false;
     showMergeDialog = true;
   }
 
@@ -239,15 +245,95 @@
   </label>
 
   <div class="flex gap-2">
-    <button
-      type="button"
-      class="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors
-        hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-      disabled={exportingOne}
-      onclick={onExportOne}
-    >
-      {exportingOne ? 'Saving…' : 'Save This PDF'}
-    </button>
+    <div class="relative flex min-w-0 flex-1">
+      <div class="flex min-w-0 flex-1 overflow-hidden rounded-lg">
+        <button
+          type="button"
+          class="min-w-0 flex-1 truncate bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors
+            hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={exportingOne}
+          onclick={onExportOne}
+        >
+          {exportingOne ? 'Saving…' : 'Save This PDF'}
+        </button>
+
+        {#if hasMoreSaveOptions}
+          <button
+            type="button"
+            aria-label="More save options"
+            aria-haspopup="true"
+            aria-expanded={showSaveMenu}
+            class="flex w-8 shrink-0 items-center justify-center border-l border-blue-700/40 bg-blue-600
+              text-white transition-colors hover:bg-blue-700"
+            onclick={() => (showSaveMenu = !showSaveMenu)}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+        {/if}
+      </div>
+
+      {#if showSaveMenu}
+        <button
+          type="button"
+          class="fixed inset-0 z-10 cursor-default"
+          aria-label="Close save options"
+          onclick={() => (showSaveMenu = false)}
+        ></button>
+        <div
+          role="menu"
+          class="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-neutral-200 bg-white
+            py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+        >
+          {#if ($activeDocument?.pageCount ?? 1) > 1}
+            <button
+              type="button"
+              role="menuitem"
+              class="block w-full px-3 py-2 text-left text-sm text-neutral-700 transition-colors
+                hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50
+                dark:text-neutral-200 dark:hover:bg-neutral-800"
+              disabled={exportingPageOnly}
+              onclick={() => {
+                showSaveMenu = false;
+                onExportPageOnly();
+              }}
+            >
+              {exportingPageOnly ? 'Saving…' : `Save This Page Only (${$activeDocument?.pageNumber ?? 1})`}
+            </button>
+          {/if}
+
+          {#if $editorStore.documents.length > 1}
+            <button
+              type="button"
+              role="menuitem"
+              class="block w-full px-3 py-2 text-left text-sm text-neutral-700 transition-colors
+                hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50
+                dark:text-neutral-200 dark:hover:bg-neutral-800"
+              disabled={exportingAll}
+              onclick={() => {
+                showSaveMenu = false;
+                onExportAll();
+              }}
+            >
+              {exportingAll ? 'Zipping…' : 'Save All (ZIP)'}
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              class="block w-full px-3 py-2 text-left text-sm text-neutral-700 transition-colors
+                hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50
+                dark:text-neutral-200 dark:hover:bg-neutral-800"
+              disabled={merging}
+              onclick={onOpenMergeDialog}
+            >
+              Save All as One PDF
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
 
     <button
       type="button"
@@ -277,43 +363,6 @@
       {/if}
     </button>
   </div>
-
-  {#if ($activeDocument?.pageCount ?? 1) > 1}
-    <button
-      type="button"
-      class="w-full rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700
-        transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50
-        dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-      disabled={exportingPageOnly}
-      onclick={onExportPageOnly}
-    >
-      {exportingPageOnly ? 'Saving…' : `Download This Page Only (${$activeDocument?.pageNumber ?? 1})`}
-    </button>
-  {/if}
-
-  {#if $editorStore.documents.length > 1}
-    <button
-      type="button"
-      class="w-full rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700
-        transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50
-        dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-      disabled={exportingAll}
-      onclick={onExportAll}
-    >
-      {exportingAll ? 'Zipping…' : 'Save All (ZIP)'}
-    </button>
-
-    <button
-      type="button"
-      class="w-full rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700
-        transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50
-        dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-      disabled={merging}
-      onclick={onOpenMergeDialog}
-    >
-      Download All as One PDF
-    </button>
-  {/if}
 </div>
 
 {#if error}

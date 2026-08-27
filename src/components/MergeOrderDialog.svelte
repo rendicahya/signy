@@ -112,7 +112,7 @@
         disabled={merging}
         onclick={() => onConfirm(order)}
       >
-        {merging ? 'Merging…' : 'Merge & Download'}
+        {merging ? 'Merging…' : 'Merge & Save'}
       </button>
     </div>
   </div>

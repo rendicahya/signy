@@ -47,6 +47,10 @@
   <div class="flex items-end gap-4 px-4 pb-0 pt-2">
     <span class="shrink-0 pb-2 text-lg font-bold tracking-tight">Signy</span>
 
+    <div class="shrink-0 pb-2">
+      <StartOverButton variant="icon" />
+    </div>
+
     <div class="flex min-w-0 flex-1 items-end gap-1 self-stretch overflow-x-auto">
       <DocumentTabs />
 
@@ -66,7 +70,6 @@
     </div>
 
     <div class="ml-auto flex shrink-0 items-center gap-1 pb-2">
-      <StartOverButton variant="icon" />
       <FullscreenToggle />
       <ThemeToggle />
     </div>

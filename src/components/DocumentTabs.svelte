@@ -1,6 +1,7 @@
 <script lang="ts">
   import { editorStore, activeDocument } from '../stores/editor';
   import { clearCachedPdf } from '../lib/pdf/docCache';
+  import { portal } from '../lib/utils/portal';
 
   function selectDocument(id: string) {
     editorStore.setActiveDocument(id);
@@ -96,7 +97,7 @@
 </div>
 
 {#if pendingCloseDoc}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div
       class="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-5 shadow-xl
         dark:border-neutral-800 dark:bg-neutral-900"
@@ -108,7 +109,7 @@
         This document hasn't been saved
       </h2>
       <p class="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
-        "{pendingCloseDoc.file.name}" has a signature and/or redaction in place but hasn't been downloaded or
+        "{pendingCloseDoc.file.name}" has a signature and/or redaction in place but hasn't been saved or
         printed yet. Closing this tab will discard it. Are you sure you want to continue?
       </p>
       <div class="mt-5 flex justify-end gap-2">

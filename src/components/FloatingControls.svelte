@@ -4,6 +4,7 @@
   import { textToolMode } from '../stores/textTool';
   import { clickToPlaceMode } from '../stores/clickToPlace';
   import { getCachedPdf } from '../lib/pdf/docCache';
+  import { getTotalRotation } from '../lib/pdf/loader';
   import { boxToRatio, placementFromRatioForDocument } from '../lib/pdf/placement';
 
   const zoomPercent = $derived(Math.round(($editorStore.renderScale / DEFAULT_RENDER_SCALE) * 100));
@@ -38,6 +39,39 @@
     redactMode.set(false);
     textToolMode.set(false);
     clickToPlaceMode.set(false);
+  }
+
+  // Fits the current page to the visible scroll area — width-only, or both
+  // dimensions (whichever is more constraining). The scroll container lives
+  // in App.svelte, outside this component (same reasoning as PDFViewer's
+  // pan-mode lookup), so it's found via its data attribute rather than
+  // prop-drilled through the tree.
+  let fitting = $state(false);
+
+  async function fitTo(mode: 'width' | 'page') {
+    const doc = $activeDocument;
+    const container = document.querySelector<HTMLElement>('[data-pdf-scroll-container]');
+    if (!doc || !container) return;
+
+    fitting = true;
+    try {
+      const pdfjsDoc = await getCachedPdf(doc.id, doc.file);
+      const page = await pdfjsDoc.getPage(doc.pageNumber);
+      const rotation = getTotalRotation(page, doc.rotation);
+      const unscaled = page.getViewport({ scale: 1, rotation });
+
+      const style = getComputedStyle(container);
+      const availableWidth = container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const availableHeight =
+        container.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+
+      const widthScale = availableWidth / unscaled.width;
+      const scale = mode === 'width' ? widthScale : Math.min(widthScale, availableHeight / unscaled.height);
+
+      editorStore.setRenderScale(scale);
+    } finally {
+      fitting = false;
+    }
   }
 
   const canApplyRedactionToAll = $derived(
@@ -213,6 +247,38 @@
       </button>
     </div>
 
+    <div class="flex items-center gap-1 rounded-full border border-neutral-200 px-1 py-1 dark:border-neutral-800">
+      <button
+        type="button"
+        aria-label="Fit width"
+        title="Fit page width to the window"
+        class="rounded-full p-1 text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed
+          disabled:opacity-30 dark:text-neutral-300 dark:hover:bg-neutral-800"
+        disabled={fitting}
+        onclick={() => fitTo('width')}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 12h18" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 7l-5 5 5 5" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16 7l5 5-5 5" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        aria-label="Fit page"
+        title="Fit the whole page to the window"
+        class="rounded-full p-1 text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed
+          disabled:opacity-30 dark:text-neutral-300 dark:hover:bg-neutral-800"
+        disabled={fitting}
+        onclick={() => fitTo('page')}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+          <rect x="6" y="4" width="12" height="16" rx="1" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 2v2M18 2v2M6 20v2M18 20v2" />
+        </svg>
+      </button>
+    </div>
+
     <div class="h-5 w-px shrink-0 bg-neutral-200 dark:bg-neutral-800"></div>
 
     <div class="flex items-center gap-1 rounded-full border border-neutral-200 px-1 py-1 dark:border-neutral-800">
@@ -224,12 +290,9 @@
         onclick={() => editorStore.rotateLeft()}
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 14 4 9l5-5" />
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M4 9h10a6 6 0 0 1 6 6v0a6 6 0 0 1-6 6H9"
-          />
+          <rect x="8" y="6" width="12" height="15" rx="1.5" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 9a5 5 0 0 1 5-5h1" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v4h4" />
         </svg>
       </button>
       <button
@@ -240,12 +303,9 @@
         onclick={() => editorStore.rotateRight()}
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="m15 14 5-5-5-5" />
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M20 9H10a6 6 0 0 0-6 6v0a6 6 0 0 0 6 6h5"
-          />
+          <rect x="4" y="6" width="12" height="15" rx="1.5" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9a5 5 0 0 0-5-5h-1" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20 4v4h-4" />
         </svg>
       </button>
     </div>

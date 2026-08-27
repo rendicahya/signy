@@ -1,5 +1,6 @@
 <script lang="ts">
   import { editorStore } from '../stores/editor';
+  import { portal } from '../lib/utils/portal';
 
   // 'full' is the original sidebar button (icon + label, full width). 'icon'
   // is a compact icon-only variant for the header toolbar, matching
@@ -58,7 +59,7 @@
 {/if}
 
 {#if showConfirm}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div
       class="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-5 shadow-xl
         dark:border-neutral-800 dark:bg-neutral-900"
