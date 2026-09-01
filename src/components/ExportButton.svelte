@@ -281,9 +281,11 @@
           aria-label="Close save options"
           onclick={() => (showSaveMenu = false)}
         ></button>
+        <!-- Opens upward: this button is pinned to the bottom of the sidebar, so a
+             downward menu would render off-screen. -->
         <div
           role="menu"
-          class="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-neutral-200 bg-white
+          class="absolute bottom-full right-0 z-20 mb-1 w-56 rounded-lg border border-neutral-200 bg-white
             py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
         >
           {#if ($activeDocument?.pageCount ?? 1) > 1}
