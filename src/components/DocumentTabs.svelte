@@ -59,6 +59,16 @@
     requestClose([id], doc?.file.name ?? 'this document');
   }
 
+  // Middle-click closes a tab, like a browser. The mousedown handler suppresses
+  // the middle-button autoscroll cursor that would otherwise appear.
+  function onTabMouseDown(e: MouseEvent) {
+    if (e.button === 1) e.preventDefault();
+  }
+
+  function onTabAuxClick(e: MouseEvent, id: string) {
+    if (e.button === 1) closeDocument(e, id);
+  }
+
   // ── Right-click context menu ────────────────────────────────────────────
   let menu: { x: number; y: number; docId: string } | null = $state(null);
   let menuEl: HTMLDivElement | null = $state(null);
@@ -148,6 +158,8 @@
       onclick={() => selectDocument(doc.id)}
       onkeydown={(e) => onTabKeydown(e, doc.id)}
       oncontextmenu={(e) => openMenu(e, doc.id)}
+      onmousedown={onTabMouseDown}
+      onauxclick={(e) => onTabAuxClick(e, doc.id)}
     >
       {#if doc.placedSignatures.length > 0 || doc.redactions.length > 0}
         <svg
