@@ -30,7 +30,14 @@
   // URL hash — no router dependency needed for one extra page on a static,
   // GitHub-Pages-hosted SPA, and a hash link stays shareable/bookmarkable.
   let hash = $state(window.location.hash);
-  window.addEventListener('hashchange', () => (hash = window.location.hash));
+  window.addEventListener('hashchange', () => {
+    hash = window.location.hash;
+    // The Verify page has its own isolated UploadCard whose drop handler
+    // stops propagation, so a drag started there never reaches onPageDrop
+    // below to clear these — reset on every navigation as a safety net.
+    pageDragDepth = 0;
+    isPageDragging = false;
+  });
   const showVerifyPage = $derived(hash === '#/verify');
 
   const editor = $derived($editorStore);
@@ -100,7 +107,11 @@
   // depth counter is needed to know when the pointer has actually left the
   // page rather than just crossed into a child element.
   function isFileDrag(e: DragEvent): boolean {
-    return !readyForEditor && !!e.dataTransfer?.types.includes('Files');
+    // Excludes the Verify page — its own UploadCard handles drags in
+    // isolation (and stops propagation on drop), so counting them here would
+    // leave pageDragDepth/isPageDragging stuck with no matching drop to
+    // reset them.
+    return !readyForEditor && !showVerifyPage && !!e.dataTransfer?.types.includes('Files');
   }
 
   function onPageDragEnter(e: DragEvent) {

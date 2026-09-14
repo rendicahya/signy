@@ -15,6 +15,8 @@
     exportSignedPdf,
     downloadSignedPdf,
     downloadPageOnlyPdf,
+    exportPagesAsZip,
+    downloadPagesZip,
     exportAllAsZip,
     downloadZip,
     exportMergedPdf,
@@ -26,6 +28,7 @@
 
   let exportingOne = $state(false);
   let exportingPageOnly = $state(false);
+  let exportingPagesZip = $state(false);
   let exportingAll = $state(false);
   let printing = $state(false);
   let showMergeDialog = $state(false);
@@ -124,6 +127,34 @@
       error = e instanceof Error ? e.message : 'Export failed';
     } finally {
       exportingPageOnly = false;
+    }
+  }
+
+  async function onExportPagesZip() {
+    const doc = $activeDocument;
+    if (!doc) return;
+
+    exportingPagesZip = true;
+    error = null;
+    try {
+      const { placements, signatureBlob } = await resolveExportInputs(doc);
+
+      const blob = await exportPagesAsZip(
+        doc,
+        signatureBlob,
+        placements,
+        $editorStore.renderScale,
+        doc.rotation,
+        currentWatermark(),
+        $stripEmbeddedScripts,
+        $securePdf,
+      );
+      downloadPagesZip(blob, doc.file.name);
+      editorStore.markDocumentExported(doc.id);
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Export failed';
+    } finally {
+      exportingPagesZip = false;
     }
   }
 
@@ -317,6 +348,21 @@
               }}
             >
               {exportingPageOnly ? 'Saving…' : `Save This Page Only (${$activeDocument?.pageNumber ?? 1})`}
+            </button>
+
+            <button
+              type="button"
+              role="menuitem"
+              class="block w-full px-3 py-2 text-left text-sm text-neutral-700 transition-colors
+                hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50
+                dark:text-neutral-200 dark:hover:bg-neutral-800"
+              disabled={exportingPagesZip}
+              onclick={() => {
+                showSaveMenu = false;
+                onExportPagesZip();
+              }}
+            >
+              {exportingPagesZip ? 'Zipping…' : 'Save Each Page as Separate PDF (ZIP)'}
             </button>
           {/if}
 

@@ -247,6 +247,15 @@ export function downloadZip(blob: Blob): void {
   downloadBlob(blob, `signy_signed_pdfs.zip`);
 }
 
+export function pagesZipFileName(originalFileName: string): string {
+  const base = originalFileName.replace(/\.pdf$/i, '');
+  return `${base}_pages.zip`;
+}
+
+export function downloadPagesZip(blob: Blob, originalFileName: string): void {
+  downloadBlob(blob, pagesZipFileName(originalFileName));
+}
+
 export function downloadMergedPdf(bytes: Uint8Array): void {
   downloadBlob(new Blob([bytes as BlobPart], { type: 'application/pdf' }), 'signy_merged.pdf');
 }
@@ -307,6 +316,46 @@ export async function resolvePlacements(
   const pdfjsDoc = await loadPdf(doc.file);
   const placement = await placementFromRatioForDocument(pdfjsDoc, 1, renderScale, doc.rotation, lastPlacementRatio);
   return [placement];
+}
+
+/**
+ * Splits one document into one PDF per page — each with the same
+ * signature/redaction/text already applied — and bundles them into a single
+ * ZIP. Complements `exportSignedPdf`'s `onlyPage`, which does the same for
+ * just one page; `signatureBlob`/`placements` are pre-resolved by the caller
+ * exactly as for a normal single-document export.
+ */
+export async function exportPagesAsZip(
+  doc: PdfDocumentState,
+  signatureBlob: Blob | undefined,
+  placements: PlacedSignature[] | undefined,
+  renderScale: number,
+  rotation: number,
+  watermark?: WatermarkOptions,
+  stripScripts?: boolean,
+  securePdf?: boolean,
+): Promise<Blob> {
+  const zip = new JSZip();
+
+  for (let page = 1; page <= doc.pageCount; page++) {
+    const bytes = await exportSignedPdf({
+      pdfFile: doc.file,
+      documentId: doc.id,
+      signatureBlob,
+      placements,
+      renderScale,
+      rotation,
+      watermark,
+      stripScripts,
+      redactions: doc.redactions,
+      texts: doc.texts,
+      onlyPage: page,
+      securePdf,
+    });
+    zip.file(pageOnlyFileName(doc.file.name, page), bytes);
+  }
+
+  return zip.generateAsync({ type: 'blob' });
 }
 
 export interface BulkExportResult {
