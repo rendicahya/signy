@@ -4,6 +4,7 @@
   import { lastPlacement } from '../stores/placement';
   import { clickToPlaceMode } from '../stores/clickToPlace';
   import { textToolMode } from '../stores/textTool';
+  import { zoomToolMode } from '../stores/zoomTool';
   import {
     watermarkText,
     includeTimestamp,
@@ -226,7 +227,10 @@
           type="checkbox"
           bind:checked={$clickToPlaceMode}
           onchange={() => {
-            if ($clickToPlaceMode) textToolMode.set(false);
+            if ($clickToPlaceMode) {
+              textToolMode.set(false);
+              zoomToolMode.set(false);
+            }
           }}
           class="rounded"
         />

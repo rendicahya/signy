@@ -5,6 +5,7 @@
   import { editorStore, activeDocument, type PlacedSignature, type PlacedText, type RedactionBox } from '../stores/editor';
   import { redactMode } from '../stores/redact';
   import { clickToPlaceMode } from '../stores/clickToPlace';
+  import { zoomToolMode } from '../stores/zoomTool';
   import {
     textToolMode,
     defaultTextFontFamily,
@@ -215,7 +216,56 @@
     cursorPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
+  // Zoom tool: clicking the document zooms in one step, keeping the clicked
+  // point anchored under the cursor (like the zoom tool in Acrobat/Figma)
+  // rather than just re-centering on the page. The canvas resizes
+  // asynchronously (renderPageToCanvas awaits pdf.js), so the scroll
+  // adjustment can't be computed up front — a ResizeObserver fires once the
+  // canvas has actually taken on its new size, and only then is the scroll
+  // position corrected using the ratio captured before the click.
+  function zoomAtPoint(e: PointerEvent) {
+    const container = wrapperEl?.closest('[data-pdf-scroll-container]') as HTMLElement | null;
+    const oldScale = $editorStore.renderScale;
+    const oldRect = canvasEl.getBoundingClientRect();
+
+    if (!container || oldRect.width === 0 || oldRect.height === 0) {
+      editorStore.zoomIn();
+      return;
+    }
+
+    // Where the click landed as a fraction across the canvas (scale-independent)...
+    const xRatio = clamp((e.clientX - oldRect.left) / oldRect.width, 0, 1);
+    const yRatio = clamp((e.clientY - oldRect.top) / oldRect.height, 0, 1);
+    // ...and the exact screen position that fraction should stay pinned to.
+    const anchorX = e.clientX;
+    const anchorY = e.clientY;
+
+    editorStore.zoomIn();
+    if ($editorStore.renderScale === oldScale) return; // already at max zoom — nothing to reposition
+
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      clearTimeout(fallback);
+      const newRect = canvasEl.getBoundingClientRect();
+      container.scrollLeft += newRect.left + xRatio * newRect.width - anchorX;
+      container.scrollTop += newRect.top + yRatio * newRect.height - anchorY;
+    };
+    const observer = new ResizeObserver(finish);
+    observer.observe(canvasEl);
+    // Safety net in case the canvas never actually resizes (e.g. the render
+    // fails) — don't leave the observer watching forever.
+    const fallback = setTimeout(finish, 1000);
+  }
+
   function onCanvasClick(e: PointerEvent) {
+    if ($zoomToolMode) {
+      zoomAtPoint(e);
+      return;
+    }
+
     if ($redactMode) return;
 
     if ($textToolMode) {
@@ -421,7 +471,7 @@
   let panScrollContainer: HTMLElement | null = null;
 
   function canPanFrom(e: PointerEvent): boolean {
-    return !$redactMode && !$textToolMode && !$clickToPlaceMode && e.target === canvasEl;
+    return !$redactMode && !$textToolMode && !$clickToPlaceMode && !$zoomToolMode && e.target === canvasEl;
   }
 
   function onWrapperPointerDown(e: PointerEvent) {
@@ -787,7 +837,8 @@
     class="rounded-lg shadow-lg active:cursor-grabbing"
     class:cursor-crosshair={$redactMode}
     class:cursor-text={$textToolMode && !$redactMode}
-    class:cursor-grab={!$redactMode && !$textToolMode && !$clickToPlaceMode}
+    class:cursor-zoom-in={$zoomToolMode && !$redactMode && !$textToolMode}
+    class:cursor-grab={!$redactMode && !$textToolMode && !$clickToPlaceMode && !$zoomToolMode}
     onpointerdown={onCanvasClick}
     onpointermove={onCanvasMouseMove}
   ></canvas>

@@ -3,6 +3,7 @@
   import { redactMode } from '../stores/redact';
   import { textToolMode } from '../stores/textTool';
   import { clickToPlaceMode } from '../stores/clickToPlace';
+  import { zoomToolMode } from '../stores/zoomTool';
   import { getCachedPdf } from '../lib/pdf/docCache';
   import { getTotalRotation } from '../lib/pdf/loader';
   import { boxToRatio, placementFromRatioForDocument } from '../lib/pdf/placement';
@@ -16,13 +17,26 @@
   // canvas — enabling one turns the other off so a click has one unambiguous meaning.
   function toggleRedactMode() {
     redactMode.update((v) => !v);
-    if ($redactMode) textToolMode.set(false);
+    if ($redactMode) {
+      textToolMode.set(false);
+      zoomToolMode.set(false);
+    }
   }
 
   function toggleTextToolMode() {
     textToolMode.update((v) => !v);
     if ($textToolMode) {
       redactMode.set(false);
+      clickToPlaceMode.set(false);
+      zoomToolMode.set(false);
+    }
+  }
+
+  function toggleZoomToolMode() {
+    zoomToolMode.update((v) => !v);
+    if ($zoomToolMode) {
+      redactMode.set(false);
+      textToolMode.set(false);
       clickToPlaceMode.set(false);
     }
   }
@@ -33,12 +47,13 @@
   // just "none of the other modes" — but gets its own button so the user has
   // an explicit, one-click way back to it (same effect as Escape, without
   // needing to know that shortcut).
-  const moveModeActive = $derived(!$redactMode && !$textToolMode && !$clickToPlaceMode);
+  const moveModeActive = $derived(!$redactMode && !$textToolMode && !$clickToPlaceMode && !$zoomToolMode);
 
   function activateMoveMode() {
     redactMode.set(false);
     textToolMode.set(false);
     clickToPlaceMode.set(false);
+    zoomToolMode.set(false);
   }
 
   // Fits the current page to the visible scroll area — width-only, or both
@@ -384,6 +399,30 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M5 6h14M12 6v12" />
       </svg>
       Add Text
+    </button>
+
+    <button
+      type="button"
+      aria-pressed={$zoomToolMode}
+      title="Zoom — click the document to zoom in at that spot"
+      class="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
+      class:border-neutral-200={!$zoomToolMode}
+      class:text-neutral-600={!$zoomToolMode}
+      class:hover:bg-neutral-100={!$zoomToolMode}
+      class:dark:border-neutral-800={!$zoomToolMode}
+      class:dark:text-neutral-300={!$zoomToolMode}
+      class:dark:hover:bg-neutral-800={!$zoomToolMode}
+      class:border-purple-600={$zoomToolMode}
+      class:bg-purple-600={$zoomToolMode}
+      class:text-white={$zoomToolMode}
+      onclick={toggleZoomToolMode}
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
+        <circle cx="10" cy="10" r="6" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10 7v6M7 10h6" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="m20 20-5.5-5.5" />
+      </svg>
+      Zoom
     </button>
 
     {#if canApplyRedactionToAll}

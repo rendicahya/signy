@@ -15,6 +15,7 @@
   import { pageSidebarOpen, togglePageSidebar } from './stores/layout';
   import { redactMode } from './stores/redact';
   import { textToolMode } from './stores/textTool';
+  import { zoomToolMode } from './stores/zoomTool';
   import { isFileAccepted, formatFileSize, dedupeFiles, MAX_PDF_SIZE_BYTES } from './lib/utils/fileValidation';
   import { clearCachedPdf } from './lib/pdf/docCache';
 
@@ -200,6 +201,11 @@
       if ($textToolMode) {
         e.preventDefault();
         textToolMode.set(false);
+        return;
+      }
+      if ($zoomToolMode) {
+        e.preventDefault();
+        zoomToolMode.set(false);
         return;
       }
     }
