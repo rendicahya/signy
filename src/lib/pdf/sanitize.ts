@@ -1,4 +1,4 @@
-import { PDFArray, PDFDict, PDFName, type PDFDocument } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFName, type PDFDocument } from '@cantoo/pdf-lib';
 
 /**
  * Strips embedded JavaScript and auto-run actions from a PDF in place.

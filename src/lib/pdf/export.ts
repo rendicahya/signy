@@ -1,4 +1,4 @@
-import { PDFDocument, degrees } from 'pdf-lib';
+import { PDFDocument, degrees } from '@cantoo/pdf-lib';
 import JSZip from 'jszip';
 import { loadPdf, getTotalRotation } from './loader';
 import { placementFromRatioForDocument } from './placement';
@@ -30,10 +30,38 @@ export interface ExportParams {
   texts?: PlacedText[];
   /** If set, the exported PDF contains only this 1-indexed page (with any placements/redactions/text still applied) instead of every page. */
   onlyPage?: number;
+  /** Lock the exported PDF's copy/extract permission — see `applyCopyProtection`. */
+  securePdf?: boolean;
 }
 
 function blobToBytes(blob: Blob): Promise<Uint8Array> {
   return blob.arrayBuffer().then((buf) => new Uint8Array(buf));
+}
+
+/**
+ * A random owner password, discarded immediately after use. pdf-lib requires
+ * some password to set permission flags on a document, but the exported PDF
+ * itself gets no user password — anyone can still open it, only the
+ * restricted permissions (e.g. copying) are enforced by compliant readers.
+ * Since the password is never stored, no one — including Signy — can later
+ * remove the restriction from the exported file.
+ */
+function randomOwnerPassword(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Locks down the copy/extract permission on a document. Applied as the very
+ * last step before a document is saved — encrypting earlier would block any
+ * further edits (drawing, page copying, etc.) pdf-lib needs to perform.
+ */
+function applyCopyProtection(pdfDoc: PDFDocument): void {
+  pdfDoc.encrypt({
+    ownerPassword: randomOwnerPassword(),
+    permissions: { copying: false },
+  });
 }
 
 /**
@@ -56,6 +84,7 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
     redactions = [],
     texts = [],
     onlyPage,
+    securePdf = false,
   } = params;
 
   const pdfBytes = await blobToBytes(pdfFile);
@@ -174,9 +203,11 @@ export async function exportSignedPdf(params: ExportParams): Promise<Uint8Array>
     const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [onlyPage - 1]);
     singlePageDoc.addPage(copiedPage);
     embedVerificationRecord(singlePageDoc, verificationRecord);
+    if (securePdf) applyCopyProtection(singlePageDoc);
     return singlePageDoc.save();
   }
 
+  if (securePdf) applyCopyProtection(pdfDoc);
   return pdfDoc.save();
 }
 
@@ -297,6 +328,7 @@ export async function exportAllAsZip(
   lastPlacementRatio: PlacementRatio | null,
   watermark?: WatermarkOptions,
   stripScripts?: boolean,
+  securePdf?: boolean,
 ): Promise<BulkExportResult> {
   const zip = new JSZip();
   const skipped: string[] = [];
@@ -320,6 +352,7 @@ export async function exportAllAsZip(
       stripScripts,
       redactions: doc.redactions,
       texts: doc.texts,
+      securePdf,
     });
 
     let name = signedFileName(doc.file.name);
@@ -353,6 +386,7 @@ export async function exportMergedPdf(
   lastPlacementRatio: PlacementRatio | null,
   watermark?: WatermarkOptions,
   stripScripts?: boolean,
+  securePdf?: boolean,
 ): Promise<Uint8Array> {
   const byId = new Map(documents.map((d) => [d.id, d]));
   const merged = await PDFDocument.create();
@@ -380,5 +414,8 @@ export async function exportMergedPdf(
     copiedPages.forEach((page) => merged.addPage(page));
   }
 
+  // Applied to the merged document itself, not the per-source exports above —
+  // those still need to be copyable (unencrypted) for `copyPages` to read them.
+  if (securePdf) applyCopyProtection(merged);
   return merged.save();
 }

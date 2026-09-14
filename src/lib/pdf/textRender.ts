@@ -5,7 +5,7 @@ import {
   type PDFFont,
   type PDFPage,
   type RGB,
-} from 'pdf-lib';
+} from '@cantoo/pdf-lib';
 import type { TextAlign, TextFontFamily } from '../../stores/editor';
 
 type BasePdfFamily = 'helvetica' | 'times' | 'courier';

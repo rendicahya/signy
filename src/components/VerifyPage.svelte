@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PDFDocument } from 'pdf-lib';
+  import { PDFDocument } from '@cantoo/pdf-lib';
   import UploadCard from './UploadCard.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
   import { extractVerificationRecord, type VerificationRecord } from '../lib/pdf/verification';
@@ -24,7 +24,10 @@
       const bytes = await file.arrayBuffer();
       // updateMetadata: false — this is a read-only check, no reason to let
       // pdf-lib touch the ModDate/Producer fields of the file we're inspecting.
-      const pdfDoc = await PDFDocument.load(bytes, { updateMetadata: false });
+      // password: '' — Signy's own "secure" exports set no user password, only
+      // an owner password to lock permissions, so an empty password decrypts
+      // them (and is simply ignored for a file that isn't encrypted at all).
+      const pdfDoc = await PDFDocument.load(bytes, { updateMetadata: false, password: '' });
       const record = extractVerificationRecord(pdfDoc);
       result = record ? { status: 'found', fileName: file.name, record } : { status: 'not-found', fileName: file.name };
     } catch (e) {

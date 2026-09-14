@@ -7,3 +7,10 @@ import { persistedWritable } from '../lib/utils/persist';
  * preferences so the choice doesn't reset every session.
  */
 export const stripEmbeddedScripts = persistedWritable<boolean>('stripEmbeddedScripts', false);
+
+/**
+ * Whether to lock the exported PDF's copy/extract permission at export time
+ * (see `applyCopyProtection` in `lib/pdf/export.ts`). Opt-in and persisted
+ * like the script-stripping preference above.
+ */
+export const securePdf = persistedWritable<boolean>('securePdf', false);

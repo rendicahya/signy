@@ -9,7 +9,7 @@
  * (CLAUDE.md v0.3) is for.
  */
 
-import type { PDFDocument } from 'pdf-lib';
+import type { PDFDocument } from '@cantoo/pdf-lib';
 
 export interface VerificationRecord {
   v: 1;

@@ -10,7 +10,7 @@
     watermarkOpacity,
   } from '../stores/watermark';
   import { lastPlacement } from '../stores/placement';
-  import { stripEmbeddedScripts } from '../stores/exportOptions';
+  import { stripEmbeddedScripts, securePdf } from '../stores/exportOptions';
   import {
     exportSignedPdf,
     downloadSignedPdf,
@@ -84,6 +84,7 @@
         stripScripts: $stripEmbeddedScripts,
         redactions: doc.redactions,
         texts: doc.texts,
+        securePdf: $securePdf,
       });
       downloadSignedPdf(bytes, doc.file.name);
       editorStore.markDocumentExported(doc.id);
@@ -115,6 +116,7 @@
         redactions: doc.redactions,
         texts: doc.texts,
         onlyPage: doc.pageNumber,
+        securePdf: $securePdf,
       });
       downloadPageOnlyPdf(bytes, doc.file.name, doc.pageNumber);
       editorStore.markDocumentExported(doc.id);
@@ -145,6 +147,7 @@
         stripScripts: $stripEmbeddedScripts,
         redactions: doc.redactions,
         texts: doc.texts,
+        securePdf: $securePdf,
       });
       printPdfBytes(bytes);
       editorStore.markDocumentExported(doc.id);
@@ -174,6 +177,7 @@
         $lastPlacement,
         currentWatermark(),
         $stripEmbeddedScripts,
+        $securePdf,
       );
 
       if (result.exportedCount === 0) {
@@ -221,6 +225,7 @@
         $lastPlacement,
         currentWatermark(),
         $stripEmbeddedScripts,
+        $securePdf,
       );
       downloadMergedPdf(bytes);
       documents.forEach((doc) => editorStore.markDocumentExported(doc.id));
@@ -242,6 +247,16 @@
       bind:checked={$stripEmbeddedScripts}
     />
     <span>Strip embedded JavaScript from the PDF</span>
+  </label>
+
+  <label class="flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+    <input
+      type="checkbox"
+      class="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-neutral-300 text-blue-600
+        focus:ring-blue-500 dark:border-neutral-600"
+      bind:checked={$securePdf}
+    />
+    <span>Secure PDF (disable text/content copying)</span>
   </label>
 
   <div class="flex gap-2">

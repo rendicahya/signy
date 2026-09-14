@@ -1,4 +1,4 @@
-import { PDFName, type PDFDocument } from 'pdf-lib';
+import { PDFName, type PDFDocument } from '@cantoo/pdf-lib';
 import { getTotalRotation, type PdfDocument as PdfJsDocument } from './loader';
 import type { RedactionBox } from '../../stores/editor';
 
