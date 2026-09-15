@@ -269,13 +269,28 @@
     <div class="fixed right-4 top-4 z-10">
       <ThemeToggle />
     </div>
-    <div class="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center gap-8 px-6">
+
+    <!-- Purely decorative glow behind the hero — sits below everything else. -->
+    <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+      <div class="absolute left-1/2 top-[-12rem] h-[34rem] w-[60rem] -translate-x-1/2 rounded-full
+        bg-blue-200/50 blur-3xl dark:bg-blue-900/25"></div>
+    </div>
+
+    <div class="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center gap-8 px-6 py-16">
       <div class="text-center">
-        <h1 class="text-3xl font-semibold">Signy</h1>
-        <p class="mt-2 text-neutral-500 dark:text-neutral-400">
-          Sign PDFs with a protected handwritten signature, and redact sensitive content. Entirely in your browser.
+        <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600
+          text-white shadow-lg shadow-blue-600/25">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-7 w-7">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M4 20l4-1 10-10a2.121 2.121 0 0 0-3-3L5 16l-1 4z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 7l3 3" />
+          </svg>
+        </div>
+        <h1 class="text-4xl font-bold tracking-tight sm:text-5xl">Signy</h1>
+        <p class="mx-auto mt-3 max-w-sm text-neutral-500 dark:text-neutral-400">
+          Sign PDFs with a protected handwritten signature, and redact sensitive content — entirely in your browser.
         </p>
-        <div class="mt-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50
+        <div class="mt-4 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50
           px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950
           dark:text-emerald-400">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
@@ -284,14 +299,41 @@
           </svg>
           100% local — your files never leave this device
         </div>
-        <p class="mt-3 text-xs">
-          <a href="#/verify" class="text-neutral-400 hover:text-neutral-600 hover:underline dark:hover:text-neutral-200">
-            Have a signed PDF? Verify it →
-          </a>
-        </p>
       </div>
 
       {#if editor.documents.length === 0}
+        <!-- Value-prop strip — shown only before the first PDF is added, so
+             it doesn't compete with the file review list in step 2. -->
+        <div class="grid w-full max-w-md grid-cols-3 gap-3">
+          <div class="flex flex-col items-center gap-1.5 rounded-xl border border-neutral-200 bg-white/70 px-2 py-3
+            text-center backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/60">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              class="h-5 w-5 text-blue-600 dark:text-blue-400">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M3 17c2-4 3 4 5 0s3-8 5-4 2 6 4 2 2-3 4-1" />
+            </svg>
+            <span class="text-xs font-medium text-neutral-600 dark:text-neutral-300">Sign</span>
+          </div>
+          <div class="flex flex-col items-center gap-1.5 rounded-xl border border-neutral-200 bg-white/70 px-2 py-3
+            text-center backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/60">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              class="h-5 w-5 text-blue-600 dark:text-blue-400">
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+              <path stroke-linecap="round" d="M8 12h8" />
+            </svg>
+            <span class="text-xs font-medium text-neutral-600 dark:text-neutral-300">Redact</span>
+          </div>
+          <div class="flex flex-col items-center gap-1.5 rounded-xl border border-neutral-200 bg-white/70 px-2 py-3
+            text-center backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/60">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              class="h-5 w-5 text-blue-600 dark:text-blue-400">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6l7-3z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9.5 12l2 2 3.5-3.5" />
+            </svg>
+            <span class="text-xs font-medium text-neutral-600 dark:text-neutral-300">Protect</span>
+          </div>
+        </div>
+
         <!-- Step 1: add PDFs. -->
         <div class="w-full max-w-md">
           <UploadCard
@@ -308,8 +350,8 @@
         <!-- Step 2: PDFs are in — review the batch, then continue. Signing
              and redacting are both optional and handled inside the editor. -->
         <div class="flex w-full max-w-md flex-col gap-6">
-          <div class="flex max-h-[60vh] w-full flex-col gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 p-4
-            dark:border-neutral-800 dark:bg-neutral-900">
+          <div class="flex max-h-[60vh] w-full flex-col gap-2 rounded-2xl border border-neutral-200 bg-neutral-50
+            p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium">
                 {editor.documents.length} PDF{editor.documents.length > 1 ? 's' : ''} added
@@ -356,14 +398,23 @@
 
           <button
             type="button"
-            class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors
-              hover:bg-blue-700"
+            class="flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2.5 text-sm
+              font-medium text-white shadow-sm shadow-blue-600/20 transition-colors hover:bg-blue-700"
             onclick={() => (continuedToEditor = true)}
           >
             Continue to Editor
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
           </button>
         </div>
       {/if}
+
+      <p class="text-xs">
+        <a href="#/verify" class="text-neutral-400 hover:text-neutral-600 hover:underline dark:hover:text-neutral-200">
+          Have a signed PDF? Verify it →
+        </a>
+      </p>
     </div>
   {:else if active}
     <Toolbar />

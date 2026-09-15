@@ -427,6 +427,25 @@ function createEditorStore() {
     );
   }
 
+  /**
+   * Replaces the active document's entire signature set — used by "Apply
+   * Signature to All Pages" to replicate one page's placement(s) across
+   * every page of the same document. Unlike setSignaturesForDocument below
+   * (which targets other documents for a cross-document sync), this is a
+   * same-document edit and goes through the active document's own undo
+   * history like any other placement change.
+   */
+  function applySignaturesToAllPages(placements: Omit<PlacedSignature, 'id'>[]) {
+    recordActiveHistory(`apply-signature-all-pages-${crypto.randomUUID()}`);
+    update((state) =>
+      updateActiveDocument(state, (doc) => ({
+        ...doc,
+        placedSignatures: placements.map((placement) => ({ ...placement, id: crypto.randomUUID() })),
+        exported: false,
+      })),
+    );
+  }
+
   /** Replaces an arbitrary document's entire signature set (not just the active one) — used by "Apply to All" to make every document have the same placement. */
   function setSignaturesForDocument(id: string, placements: Omit<PlacedSignature, 'id'>[]) {
     update((state) => ({
@@ -689,6 +708,7 @@ function createEditorStore() {
     addSignature,
     removeSignature,
     updateSignature,
+    applySignaturesToAllPages,
     setSignaturesForDocument,
     addRedaction,
     updateRedaction,
