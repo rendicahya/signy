@@ -120,7 +120,7 @@
   // again immediately reverts to Move, matching the requested "hover to
   // select, move to go back" behavior. The manual Select toggle
   // ($textSelectMode) is unaffected and stays sticky either way.
-  const HOVER_SELECT_DELAY = 1000;
+  const HOVER_SELECT_DELAY = 300;
   let hoverTextSelect = $state(false);
   let hoverCheckTimer: ReturnType<typeof setTimeout> | undefined;
   const textSelectActive = $derived($textSelectMode || hoverTextSelect);
@@ -265,6 +265,17 @@
     const currentText = selectedTextId ? wrapperEl?.querySelector(`[data-placed-text="${selectedTextId}"]`) : null;
     if (!currentText?.contains(e.target as Node) && editingTextId !== selectedTextId) {
       selectedTextId = null;
+    }
+
+    // Clicking anywhere outside the selectable-text layer collapses any
+    // active PDF text selection, like clicking away normally does — needed
+    // explicitly because that layer goes pointer-events: none again as soon
+    // as the click lands elsewhere (see textSelectActive), so there's no
+    // guarantee the browser's own native "click away clears selection"
+    // behavior fires on an element that isn't even receiving the click.
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && !textLayerEl?.contains(e.target as Node)) {
+      selection.removeAllRanges();
     }
   }
 
