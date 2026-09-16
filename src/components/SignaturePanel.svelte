@@ -5,6 +5,7 @@
   import { clickToPlaceMode } from '../stores/clickToPlace';
   import { textToolMode } from '../stores/textTool';
   import { zoomToolMode } from '../stores/zoomTool';
+  import { textSelectMode } from '../stores/textSelect';
   import {
     watermarkText,
     includeTimestamp,
@@ -275,6 +276,7 @@
             if ($clickToPlaceMode) {
               textToolMode.set(false);
               zoomToolMode.set(false);
+              textSelectMode.set(false);
             }
           }}
           class="rounded"

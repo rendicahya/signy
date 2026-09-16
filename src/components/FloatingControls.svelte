@@ -4,6 +4,7 @@
   import { textToolMode } from '../stores/textTool';
   import { clickToPlaceMode } from '../stores/clickToPlace';
   import { zoomToolMode } from '../stores/zoomTool';
+  import { textSelectMode } from '../stores/textSelect';
   import { getCachedPdf } from '../lib/pdf/docCache';
   import { getTotalRotation } from '../lib/pdf/loader';
   import { boxToRatio, placementFromRatioForDocument } from '../lib/pdf/placement';
@@ -20,6 +21,7 @@
     if ($redactMode) {
       textToolMode.set(false);
       zoomToolMode.set(false);
+      textSelectMode.set(false);
     }
   }
 
@@ -29,6 +31,7 @@
       redactMode.set(false);
       clickToPlaceMode.set(false);
       zoomToolMode.set(false);
+      textSelectMode.set(false);
     }
   }
 
@@ -38,6 +41,17 @@
       redactMode.set(false);
       textToolMode.set(false);
       clickToPlaceMode.set(false);
+      textSelectMode.set(false);
+    }
+  }
+
+  function toggleTextSelectMode() {
+    textSelectMode.update((v) => !v);
+    if ($textSelectMode) {
+      redactMode.set(false);
+      textToolMode.set(false);
+      clickToPlaceMode.set(false);
+      zoomToolMode.set(false);
     }
   }
 
@@ -47,13 +61,16 @@
   // just "none of the other modes" — but gets its own button so the user has
   // an explicit, one-click way back to it (same effect as Escape, without
   // needing to know that shortcut).
-  const moveModeActive = $derived(!$redactMode && !$textToolMode && !$clickToPlaceMode && !$zoomToolMode);
+  const moveModeActive = $derived(
+    !$redactMode && !$textToolMode && !$clickToPlaceMode && !$zoomToolMode && !$textSelectMode,
+  );
 
   function activateMoveMode() {
     redactMode.set(false);
     textToolMode.set(false);
     clickToPlaceMode.set(false);
     zoomToolMode.set(false);
+    textSelectMode.set(false);
   }
 
   // Fits the current page to the visible scroll area — width-only, or both
@@ -483,6 +500,28 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="m20 20-5.5-5.5" />
       </svg>
       Zoom
+    </button>
+
+    <button
+      type="button"
+      aria-pressed={$textSelectMode}
+      title="Select Text — drag over the document to select and copy its real text"
+      class="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
+      class:border-neutral-200={!$textSelectMode}
+      class:text-neutral-600={!$textSelectMode}
+      class:hover:bg-neutral-100={!$textSelectMode}
+      class:dark:border-neutral-800={!$textSelectMode}
+      class:dark:text-neutral-300={!$textSelectMode}
+      class:dark:hover:bg-neutral-800={!$textSelectMode}
+      class:border-emerald-600={$textSelectMode}
+      class:bg-emerald-600={$textSelectMode}
+      class:text-white={$textSelectMode}
+      onclick={toggleTextSelectMode}
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 5h8M12 5v14M8 19h8" />
+      </svg>
+      Select Text
     </button>
 
     {#if canApplyRedactionToAll}

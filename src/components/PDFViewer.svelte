@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { renderPageToCanvas, type PdfDocument } from '../lib/pdf/loader';
+  import { renderTextLayer, cancelTextLayer } from '../lib/pdf/textLayer';
   import { getCachedPdf } from '../lib/pdf/docCache';
   import { editorStore, activeDocument, type PlacedSignature, type PlacedText, type RedactionBox } from '../stores/editor';
   import { redactMode } from '../stores/redact';
   import { clickToPlaceMode } from '../stores/clickToPlace';
   import { zoomToolMode } from '../stores/zoomTool';
+  import { textSelectMode } from '../stores/textSelect';
   import {
     textToolMode,
     defaultTextFontFamily,
@@ -40,6 +42,7 @@
 
   let canvasEl: HTMLCanvasElement;
   let wrapperEl: HTMLDivElement;
+  let textLayerEl: HTMLDivElement;
   let pdfDoc: PdfDocument | null = $state(null);
   let error: string | null = $state(null);
   let isDragOver = $state(false);
@@ -83,6 +86,31 @@
     renderPageToCanvas(pdfDoc, doc.pageNumber, canvasEl, scale, doc.rotation).catch((e) => {
       error = e instanceof Error ? e.message : 'Failed to render PDF';
     });
+  });
+
+  // The selectable text overlay (see lib/pdf/textLayer.ts) is only built
+  // while "Select Text" mode is on — pdf.js's TextLayer isn't free to build,
+  // and outside this mode it's pointer-events: none anyway (see the
+  // markup below), so there'd be nothing to select even if it were there.
+  // Rebuilds on every page/scale/rotation/document change like the canvas
+  // does above; renderTextLayer's own claim-tracking (see textLayer.ts)
+  // handles cancelling a previous in-flight build when a newer one starts.
+  $effect(() => {
+    const doc = $activeDocument;
+    const scale = $editorStore.renderScale;
+    const active = $textSelectMode;
+
+    if (!textLayerEl) return;
+    if (!active || !doc || !pdfDoc) {
+      cancelTextLayer(textLayerEl);
+      return;
+    }
+
+    renderTextLayer(pdfDoc, doc.pageNumber, textLayerEl, scale, doc.rotation).catch((e) => {
+      error = e instanceof Error ? e.message : 'Failed to render selectable text';
+    });
+
+    return () => cancelTextLayer(textLayerEl);
   });
 
   // Only show placements when we're looking at their page.
@@ -471,7 +499,14 @@
   let panScrollContainer: HTMLElement | null = null;
 
   function canPanFrom(e: PointerEvent): boolean {
-    return !$redactMode && !$textToolMode && !$clickToPlaceMode && !$zoomToolMode && e.target === canvasEl;
+    return (
+      !$redactMode &&
+      !$textToolMode &&
+      !$clickToPlaceMode &&
+      !$zoomToolMode &&
+      !$textSelectMode &&
+      e.target === canvasEl
+    );
   }
 
   function onWrapperPointerDown(e: PointerEvent) {
@@ -838,10 +873,16 @@
     class:cursor-crosshair={$redactMode}
     class:cursor-text={$textToolMode && !$redactMode}
     class:cursor-zoom-in={$zoomToolMode && !$redactMode && !$textToolMode}
-    class:cursor-grab={!$redactMode && !$textToolMode && !$clickToPlaceMode && !$zoomToolMode}
+    class:cursor-grab={!$redactMode && !$textToolMode && !$clickToPlaceMode && !$zoomToolMode && !$textSelectMode}
     onpointerdown={onCanvasClick}
     onpointermove={onCanvasMouseMove}
   ></canvas>
+
+  <!-- Invisible, selectable text built by lib/pdf/textLayer.ts — only
+       populated (and only receives pointer events) while Select Text mode
+       is on, so it never steals clicks/drags meant for the canvas or the
+       other overlays below in every other mode. -->
+  <div bind:this={textLayerEl} class="pdf-text-layer" class:pointer-events-none={!$textSelectMode}></div>
 
   {#if $clickToPlaceMode && !$redactMode && $signatureStore.previewUrl}
     {@const sig = $signatureStore}

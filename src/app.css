@@ -7,3 +7,71 @@ body {
   height: 100%;
 }
 
+/*
+ * Minimal port of pdf.js's own .textLayer rules (from pdfjs-dist/web/pdf_viewer.css)
+ * for the invisible, selectable text overlay rendered by lib/pdf/textLayer.ts. Renamed
+ * to .pdf-text-layer so it can't collide with anything else, and trimmed to just what
+ * that overlay needs (no highlighting/annotation-editor rules). The [data-main-rotation]
+ * rules are load-bearing, not decorative: pdf.js's TextLayer sizes the container to the
+ * page's *unrotated* dimensions and relies on this transform to reorient it to match a
+ * rotated canvas — see the comment above renderTextLayer() in lib/pdf/textLayer.ts.
+ */
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  cursor: text;
+}
+
+.pdf-text-layer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.pdf-text-layer span[role='img'] {
+  user-select: none;
+  cursor: default;
+}
+
+.pdf-text-layer ::selection {
+  background: rgba(0, 100, 255, 0.3);
+}
+.pdf-text-layer ::-moz-selection {
+  background: rgba(0, 100, 255, 0.3);
+}
+
+.pdf-text-layer br::selection,
+.pdf-text-layer br::-moz-selection {
+  background: transparent;
+}
+
+.pdf-text-layer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: -1;
+  cursor: default;
+  user-select: none;
+}
+.pdf-text-layer.selecting .endOfContent {
+  top: 0;
+}
+
+.pdf-text-layer[data-main-rotation='90'] {
+  transform: rotate(90deg) translateY(-100%);
+}
+.pdf-text-layer[data-main-rotation='180'] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+.pdf-text-layer[data-main-rotation='270'] {
+  transform: rotate(270deg) translateX(-100%);
+}
+
