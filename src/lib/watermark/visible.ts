@@ -54,7 +54,8 @@ export function buildWatermarkLines(opts: WatermarkOptions): string[] {
   return lines;
 }
 
-function parsePosition(position: WatermarkPosition = 'center') {
+/** Exported so the editor can render a live preview using the same alignment rules. */
+export function parsePosition(position: WatermarkPosition = 'center') {
   const [vAlign, hAlign] = position.split('-') as [string, string | undefined];
   const vertical = vAlign === 'top' || vAlign === 'bottom' ? vAlign : 'center';
   const horizontal = hAlign === 'left' || hAlign === 'right' ? hAlign : 'center';

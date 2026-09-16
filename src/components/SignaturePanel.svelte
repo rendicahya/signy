@@ -20,6 +20,7 @@
     WATERMARK_OPACITY_STEP,
     type WatermarkPosition,
   } from '../stores/watermark';
+  import { buildWatermarkLines, parsePosition } from '../lib/watermark/visible';
   import { fitWithinBox } from '../lib/signature/layout';
   import { getCachedPdf } from '../lib/pdf/docCache';
   import { placementFromRatioForDocument } from '../lib/pdf/placement';
@@ -28,6 +29,17 @@
   import { isFileAccepted, formatFileSize, MAX_SIGNATURE_SIZE_BYTES } from '../lib/utils/fileValidation';
 
   const sig = $derived($signatureStore);
+
+  // Live preview of the watermark that export.ts / applyVisibleWatermark will
+  // bake into the signature image — mirrors its layout math (see
+  // lib/watermark/visible.ts) but renders as an HTML overlay instead of a
+  // canvas so it updates instantly as the user tweaks the controls below.
+  let sigImgHeight = $state(0);
+  const watermarkLines = $derived(buildWatermarkLines({ customText: $watermarkText, includeTimestamp: $includeTimestamp }));
+  const watermarkAlign = $derived(parsePosition($watermarkPosition));
+  const watermarkPreviewFontSize = $derived(Math.max(10, Math.round(sigImgHeight * $watermarkFontScale)));
+  const watermarkPreviewLineHeight = $derived(watermarkPreviewFontSize * 1.2);
+  const watermarkPreviewPadding = $derived(Math.round(sigImgHeight * 0.06));
 
   let replaceError: string | null = $state(null);
 
@@ -206,21 +218,54 @@
 
   {#if sig.signature && sig.previewUrl}
     <div class="space-y-2">
-      <button
-        type="button"
-        title="Drag onto the document. Resize using the handle after placing."
-        class="mx-auto block border-0 bg-transparent p-0"
-        onclick={placeAtDefault}
-        aria-label="Place signature on the document"
-      >
-        <img
-          src={sig.previewUrl}
-          alt="Signature"
-          draggable="true"
-          class="mx-auto max-h-24 cursor-grab object-contain active:cursor-grabbing"
-          ondragstart={onDragStart}
-        />
-      </button>
+      <div class="relative mx-auto w-fit">
+        <button
+          type="button"
+          title="Drag onto the document. Resize using the handle after placing."
+          class="block border-0 bg-transparent p-0"
+          onclick={placeAtDefault}
+          aria-label="Place signature on the document"
+        >
+          <img
+            bind:clientHeight={sigImgHeight}
+            src={sig.previewUrl}
+            alt="Signature"
+            draggable="true"
+            class="block max-h-24 cursor-grab object-contain active:cursor-grabbing"
+            ondragstart={onDragStart}
+          />
+        </button>
+
+        {#if watermarkLines.length > 0 && sigImgHeight > 0}
+          <div
+            class="pointer-events-none absolute inset-0 flex overflow-hidden"
+            style:align-items={watermarkAlign.vertical === 'top'
+              ? 'flex-start'
+              : watermarkAlign.vertical === 'bottom'
+                ? 'flex-end'
+                : 'center'}
+            style:justify-content={watermarkAlign.horizontal === 'left'
+              ? 'flex-start'
+              : watermarkAlign.horizontal === 'right'
+                ? 'flex-end'
+                : 'center'}
+            style:padding="{watermarkPreviewPadding}px"
+          >
+            <div
+              style:color={$watermarkColor}
+              style:opacity={$watermarkOpacity}
+              style:font-size="{watermarkPreviewFontSize}px"
+              style:line-height="{watermarkPreviewLineHeight}px"
+              style:text-align={watermarkAlign.horizontal}
+              class="font-sans"
+            >
+              {#each watermarkLines as line}
+                <div>{line}</div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
 
       <label class="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
         <input
