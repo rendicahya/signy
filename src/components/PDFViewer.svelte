@@ -88,20 +88,21 @@
     });
   });
 
-  // The selectable text overlay (see lib/pdf/textLayer.ts) is only built
-  // while "Select Text" mode is on — pdf.js's TextLayer isn't free to build,
-  // and outside this mode it's pointer-events: none anyway (see the
-  // markup below), so there'd be nothing to select even if it were there.
-  // Rebuilds on every page/scale/rotation/document change like the canvas
-  // does above; renderTextLayer's own claim-tracking (see textLayer.ts)
-  // handles cancelling a previous in-flight build when a newer one starts.
+  // The selectable text overlay (see lib/pdf/textLayer.ts) is always built
+  // alongside the canvas, even outside Select mode: the hover-to-select
+  // behavior below needs the spans' real geometry to know whether the
+  // pointer is sitting over text, and it's pointer-events: none (see the
+  // markup below) unless textSelectActive is true, so it can't steal clicks
+  // while inactive either way. Rebuilds on every page/scale/rotation/document
+  // change like the canvas does above; renderTextLayer's own claim-tracking
+  // (see textLayer.ts) handles cancelling a previous in-flight build when a
+  // newer one starts.
   $effect(() => {
     const doc = $activeDocument;
     const scale = $editorStore.renderScale;
-    const active = $textSelectMode;
 
     if (!textLayerEl) return;
-    if (!active || !doc || !pdfDoc) {
+    if (!doc || !pdfDoc) {
       cancelTextLayer(textLayerEl);
       return;
     }
@@ -112,6 +113,75 @@
 
     return () => cancelTextLayer(textLayerEl);
   });
+
+  // Move mode auto-switches into text selection when the pointer hovers
+  // (not moves) over real text for HOVER_SELECT_DELAY, so the user doesn't
+  // have to click the toolbar's Select button first — moving the pointer
+  // again immediately reverts to Move, matching the requested "hover to
+  // select, move to go back" behavior. The manual Select toggle
+  // ($textSelectMode) is unaffected and stays sticky either way.
+  const HOVER_SELECT_DELAY = 1000;
+  let hoverTextSelect = $state(false);
+  let hoverCheckTimer: ReturnType<typeof setTimeout> | undefined;
+  const textSelectActive = $derived($textSelectMode || hoverTextSelect);
+
+  function clearHoverTimer() {
+    clearTimeout(hoverCheckTimer);
+    hoverCheckTimer = undefined;
+  }
+
+  // Geometric hit test against the text layer's own spans rather than
+  // elementFromPoint/elementsFromPoint: those respect pointer-events, and the
+  // text layer is deliberately pointer-events: none until textSelectActive is
+  // already true — exactly the thing this check exists to decide.
+  function isPointOverText(clientX: number, clientY: number): boolean {
+    if (!textLayerEl) return false;
+    const spans = textLayerEl.querySelectorAll('span');
+    for (const span of spans) {
+      const rect = span.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function updateHoverTextSelect(e: PointerEvent) {
+    const explicitToolActive = $redactMode || $textToolMode || $clickToPlaceMode || $zoomToolMode || $textSelectMode;
+    const otherInteractionInProgress =
+      isPanning ||
+      drawingBox ||
+      movingSignatureId ||
+      movingRedactionId ||
+      movingTextId ||
+      resizingSignatureId ||
+      resizingRedactionId ||
+      resizingTextId;
+
+    if (explicitToolActive || otherInteractionInProgress) {
+      clearHoverTimer();
+      hoverTextSelect = false;
+      return;
+    }
+
+    // A held button while already hover-active means the user is mid-drag
+    // extending a text selection they just entered — that's forward
+    // progress, not "moved away," so leave the mode alone until they let go.
+    if (hoverTextSelect && e.buttons !== 0) return;
+
+    clearHoverTimer();
+    hoverTextSelect = false;
+
+    const { clientX, clientY } = e;
+    hoverCheckTimer = setTimeout(() => {
+      if (isPointOverText(clientX, clientY)) hoverTextSelect = true;
+    }, HOVER_SELECT_DELAY);
+  }
+
+  function onWrapperPointerLeave() {
+    clearHoverTimer();
+    hoverTextSelect = false;
+  }
 
   // Only show placements when we're looking at their page.
   const signaturesOnCurrentPage = $derived.by(() => {
@@ -504,7 +574,7 @@
       !$textToolMode &&
       !$clickToPlaceMode &&
       !$zoomToolMode &&
-      !$textSelectMode &&
+      !textSelectActive &&
       e.target === canvasEl
     );
   }
@@ -536,6 +606,8 @@
   }
 
   function onWrapperPointerMove(e: PointerEvent) {
+    updateHoverTextSelect(e);
+
     if (drawingBox) {
       const rect = canvasEl.getBoundingClientRect();
       const x = clamp(e.clientX - rect.left, 0, rect.width);
@@ -866,6 +938,7 @@
   onpointerdown={onWrapperPointerDown}
   onpointermove={onWrapperPointerMove}
   onpointerup={onWrapperPointerUp}
+  onpointerleave={onWrapperPointerLeave}
 >
   <canvas
     bind:this={canvasEl}
@@ -873,16 +946,18 @@
     class:cursor-crosshair={$redactMode}
     class:cursor-text={$textToolMode && !$redactMode}
     class:cursor-zoom-in={$zoomToolMode && !$redactMode && !$textToolMode}
-    class:cursor-grab={!$redactMode && !$textToolMode && !$clickToPlaceMode && !$zoomToolMode && !$textSelectMode}
+    class:cursor-grab={!$redactMode && !$textToolMode && !$clickToPlaceMode && !$zoomToolMode && !textSelectActive}
     onpointerdown={onCanvasClick}
     onpointermove={onCanvasMouseMove}
   ></canvas>
 
-  <!-- Invisible, selectable text built by lib/pdf/textLayer.ts — only
-       populated (and only receives pointer events) while Select Text mode
-       is on, so it never steals clicks/drags meant for the canvas or the
-       other overlays below in every other mode. -->
-  <div bind:this={textLayerEl} class="pdf-text-layer" class:pointer-events-none={!$textSelectMode}></div>
+  <!-- Invisible, selectable text built by lib/pdf/textLayer.ts — always
+       built (see the $effect above) so hover hit-testing has real geometry
+       to check, but only receives pointer events while textSelectActive
+       (the manual Select toggle, or a live hover-trigger) is true, so it
+       never steals clicks/drags meant for the canvas or the other overlays
+       below in every other mode. -->
+  <div bind:this={textLayerEl} class="pdf-text-layer" class:pointer-events-none={!textSelectActive}></div>
 
   {#if $clickToPlaceMode && !$redactMode && $signatureStore.previewUrl}
     {@const sig = $signatureStore}

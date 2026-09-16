@@ -521,7 +521,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
         <path stroke-linecap="round" stroke-linejoin="round" d="M8 5h8M12 5v14M8 19h8" />
       </svg>
-      Select Text
+      Select
     </button>
 
     {#if canApplyRedactionToAll}
