@@ -78,6 +78,23 @@
 
   onMount(loadDocument);
 
+  // Tracks whether there's a live (non-collapsed) selection anchored inside
+  // the text layer, independent of hoverTextSelect/$textSelectMode — so that
+  // after a hover-triggered selection and the pointer moving back out to
+  // Move mode, the selected text stays interactive (right-click still hits
+  // it, so the browser's own "Copy" context-menu item keeps working) instead
+  // of the layer going pointer-events: none and silently losing the
+  // selection to whatever's underneath. See textSelectActive below.
+  let hasTextSelection = $state(false);
+  onMount(() => {
+    function updateHasTextSelection() {
+      const sel = window.getSelection();
+      hasTextSelection = !!sel && !sel.isCollapsed && !!textLayerEl && !!sel.anchorNode && textLayerEl.contains(sel.anchorNode);
+    }
+    document.addEventListener('selectionchange', updateHasTextSelection);
+    return () => document.removeEventListener('selectionchange', updateHasTextSelection);
+  });
+
   // Re-render the current page whenever the page number, zoom level, rotation, or the document changes.
   $effect(() => {
     const doc = $activeDocument;
@@ -123,7 +140,7 @@
   const HOVER_SELECT_DELAY = 300;
   let hoverTextSelect = $state(false);
   let hoverCheckTimer: ReturnType<typeof setTimeout> | undefined;
-  const textSelectActive = $derived($textSelectMode || hoverTextSelect);
+  const textSelectActive = $derived($textSelectMode || hoverTextSelect || hasTextSelection);
 
   function clearHoverTimer() {
     clearTimeout(hoverCheckTimer);
